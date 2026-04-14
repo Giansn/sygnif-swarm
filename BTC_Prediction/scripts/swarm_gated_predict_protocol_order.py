@@ -201,6 +201,8 @@ def main() -> int:
     # Fusion aligner: sum-label (Nautilus+ML+btc_future) + **btc_future** demo vote
     os.environ.setdefault("SWARM_ORDER_REQUIRE_FUSION_ALIGN", "1")
     os.environ.setdefault("SWARM_ORDER_FUSION_ALIGN_BTC_FUTURE", "1")
+    os.environ.setdefault("SWARM_ORDER_BTC_FUTURE_FLAT_PASS", "1")
+    os.environ.setdefault("SWARM_ORDER_BTC_FUTURE_VOTE_FLAT_PASS", "1")
     os.environ.setdefault("SWARM_ORDER_REQUIRE_HIVEMIND_VOTE", "1")
     os.environ.setdefault("SWARM_ORDER_HIVEMIND_VOTE_FLAT_PASS", "1")
     if getattr(args, "no_fusion_align", False):
