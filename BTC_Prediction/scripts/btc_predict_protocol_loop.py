@@ -41,6 +41,11 @@ the ASAP script, optimised for **closed-loop** automation.
 - ``PREDICT_LOOP_MAX_ITERATIONS`` — **0** = run until SIGINT/SIGTERM.
 - ``PREDICT_LOOP_ERROR_SLEEP_SEC`` (default **2**) — when ``interval`` is **0**, sleep this many seconds
   only after a thrown exception (avoids a tight spin on persistent failures). Set **0** to retry immediately.
+- **Resource guard (letscrash):** ``letscrash/btc_strategy_0_1_rule_registry.json`` → ``tuning.predict_loop_resource``
+  (``enabled``, ``mem_available_min_mb``, ``loadavg_max``, ``cooldown_sec``). When enabled, skips ``run_live_fit``
+  under low **MemAvailable** or high **loadavg** and logs ``SYGNIF_LOOP_RESOURCE_HOLD``. Env overrides:
+  ``SYGNIF_PREDICT_RESOURCE_GUARD``, ``SYGNIF_RESOURCE_MEM_MIN_MB``, ``SYGNIF_RESOURCE_LOAD_MAX``,
+  ``SYGNIF_RESOURCE_COOLDOWN_SEC``.
 - ``PREDICT_LOOP_HOLD_ON_NO_EDGE`` (default **1**) — when truthy, **do not** flatten on a **no-edge**
   signal (``decide_side`` → ``None``); only **exit on an opposite** long/short target (reduces chop).
   Set to ``0`` or use ``--exit-on-no-edge`` to restore flatten-every-cycle on no-edge.
@@ -92,6 +97,19 @@ from btc_asap_predict_core import parse_linear_position  # noqa: E402
 from btc_asap_predict_core import parse_usdt_available  # noqa: E402
 from btc_asap_predict_core import qty_btc  # noqa: E402
 from btc_asap_predict_core import run_live_fit  # noqa: E402
+
+try:
+    from letscrash_predict_loop_guard import (  # noqa: E402
+        load_guard_config,
+        resource_snapshot,
+        should_skip_iteration,
+    )
+except ImportError:
+    from finance_agent.letscrash_predict_loop_guard import (  # noqa: E402
+        load_guard_config,
+        resource_snapshot,
+        should_skip_iteration,
+    )
 
 _STOP = False
 
@@ -224,6 +242,21 @@ def _iteration(
     refresh_aligned_every: int,
 ) -> int:
     """Return 0 ok, nonzero severe error (caller may continue loop)."""
+    _rg = load_guard_config(_REPO)
+    _skip, _rg_reason, _rg_sleep = should_skip_iteration(_rg)
+    if _skip:
+        _snap = resource_snapshot()
+        print(
+            "SYGNIF_LOOP_RESOURCE_HOLD "
+            + json.dumps(
+                {"iter": iter_count, "reason": _rg_reason, **_snap},
+                separators=(",", ":"),
+            ),
+            flush=True,
+        )
+        time.sleep(_rg_sleep)
+        return 0
+
     wj = str(args.write_json).strip() if not args.no_write_json else ""
     wpath = wj or None
     allow_buy, enhanced, out, pred_ms = run_live_fit(
@@ -259,6 +292,20 @@ def _iteration(
         )
         if not swarm_gate_ok and target in ("long", "short"):
             entry_blocked = True
+        _sources = swarm.get("sources") if isinstance(swarm.get("sources"), dict) else {}
+        _bf = _sources.get("bf") if isinstance(_sources.get("bf"), dict) else {}
+        _btc_fut = swarm.get("btc_future") if isinstance(swarm.get("btc_future"), dict) else {}
+        _bf_line: dict[str, object] = {"iter": iter_count, "swarm_gate_ok": swarm_gate_ok}
+        if _bf:
+            _bf_line["bf_vote"] = _bf.get("vote")
+            _bf_line["bf_detail"] = _bf.get("detail")
+        if _btc_fut:
+            _bf_line["btc_future_enabled"] = _btc_fut.get("enabled")
+            _bf_line["btc_future_ok"] = _btc_fut.get("ok")
+        print(
+            f"SYGNIF_LOOP_BTC_FUTURE {json.dumps(_bf_line, separators=(',', ':'), default=str)}",
+            flush=True,
+        )
 
     mn_usdt = getattr(args, "manual_notional_usdt", None)
     if mn_usdt is not None:

@@ -46,6 +46,13 @@
       "drawdown_step": -0.018,
       "notes": "More scale-in tranches, slightly earlier vs parent -3% (more entry events in logs on one position)."
     },
+    "predict_loop_resource": {
+      "enabled": true,
+      "mem_available_min_mb": 512,
+      "loadavg_max": 14.0,
+      "cooldown_sec": 25,
+      "notes": "SYGNIF predict-protocol loop: skip run_live_fit when MemAvailable is low or loadavg_1m is high; sleep cooldown_sec to avoid CPU spin. Disable: SYGNIF_PREDICT_RESOURCE_GUARD=0 or set enabled false here."
+    },
     "entry_prediction": {
       "enabled": true,
       "also_gate_tags": ["orb_long"],
