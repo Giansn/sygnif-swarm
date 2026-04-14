@@ -34,6 +34,18 @@ def _hedge_live_ok() -> bool:
     return v == "YES"
 
 
+def signed_trading_rest_base() -> str:
+    """
+    Which signed-trading REST host ``_credentials()`` would use (no key load; no I/O).
+
+    **API demo** is ``https://api-demo.bybit.com`` (UTA demo / ``BYBIT_DEMO_*``) — same **USDT linear**
+    products as mainnet, not live ``api.bybit.com`` balances.
+    """
+    if _hedge_mainnet_enabled() and _hedge_live_ok():
+        return "https://api.bybit.com"
+    return "https://api-demo.bybit.com"
+
+
 def _credentials() -> Tuple[str, str, str]:
     if _hedge_mainnet_enabled():
         if not _hedge_live_ok():

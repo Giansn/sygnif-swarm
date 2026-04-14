@@ -13,7 +13,9 @@ Delegates **entries and exits** to the same signal as ``btc_predict_asap_order``
 - **Flip** (e.g. long → short): **close** then **open** opposite in the same iteration (brief pause after
   close for venue consistency).
 
-Uses **Bybit demo** REST (``trade_overseer/bybit_linear_hedge.py``), not Nautilus OMS — same family as
+Uses **Bybit API demo** REST — ``trade_overseer/bybit_linear_hedge.py`` → ``https://api-demo.bybit.com`` with
+``BYBIT_DEMO_*`` (mainnet-mirrored USDT linear), **not** ``api.bybit.com``, unless you explicitly set
+``OVERSEER_BYBIT_HEDGE_MAINNET=YES`` and ``OVERSEER_HEDGE_LIVE_OK=YES`` (not used by Swarm launchers). Same family as
 the ASAP script, optimised for **closed-loop** automation.
 
 **Run**

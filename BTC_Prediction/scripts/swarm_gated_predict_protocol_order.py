@@ -3,7 +3,8 @@
 **One-shot (or gated dry-run):** predict-protocol **5m live fit** + **Swarm** (incl. **btc_future**)
 + **Nautilus/ML fusion** sidecar, then optional **Bybit demo trading** market order (REST).
 
-**Demo account keys (not mainnet):** set ``BYBIT_DEMO_API_KEY`` and ``BYBIT_DEMO_API_SECRET`` in the
+**Bybit API demo (mainnet-style USDT linear, not ``api.bybit.com``):** set ``BYBIT_DEMO_API_KEY`` and
+``BYBIT_DEMO_API_SECRET`` in the
 environment — typically from ``~/SYGNIF/.env``, ``~/SYGNIF/swarm_operator.env``, ``SYGNIF_SECRETS_ENV_FILE``,
 and optional sibling ``.env`` files under ``$HOME`` (see ``finance_agent/swarm_instance_paths.py``:
 ``SYGNIF_SWARM_LINK_INSTANCE``, ``SYGNIF_INSTANCE_ROOTS``, ``SYGNIF_INSTANCE_ROOTS_SCAN``). Use ``--env-file PATH``
@@ -56,6 +57,11 @@ from swarm_instance_paths import apply_swarm_instance_env, append_instance_roots
 from swarm_order_gate import swarm_fusion_allows  # noqa: E402
 
 
+def _force_api_demo_trading_host() -> None:
+    """Swarm gated stack: venue orders always **api-demo** (``OVERSEER_BYBIT_HEDGE_MAINNET=0``)."""
+    os.environ["OVERSEER_BYBIT_HEDGE_MAINNET"] = "0"
+
+
 def load_swarm_demo_env(*, extra_env_file: Path | None = None) -> None:
     """
     Load secrets for demo workflow (see ``finance_agent/swarm_instance_paths.apply_swarm_instance_env``),
@@ -74,16 +80,13 @@ def _mask_key_id(s: str) -> str:
 
 
 def _demo_venue_line() -> str:
-    mainnet = os.environ.get("OVERSEER_BYBIT_HEDGE_MAINNET", "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-        "on",
-    )
-    live_ok = os.environ.get("OVERSEER_HEDGE_LIVE_OK", "").strip().upper() == "YES"
-    if mainnet and live_ok:
-        return "venue=MAINNET api.bybit.com (OVERSEER_BYBIT_HEDGE_MAINNET — not demo)"
-    return "venue=DEMO api-demo.bybit.com (BYBIT_DEMO_API_KEY / BYBIT_DEMO_API_SECRET)"
+    try:
+        import bybit_linear_hedge as blh  # noqa: PLC0415
+
+        base = blh.signed_trading_rest_base()
+    except Exception:
+        base = "https://api-demo.bybit.com"
+    return f"orders_rest={base} creds=BYBIT_DEMO_API_KEY (API demo / mainnet-mirrored linear)"
 
 
 def _print_demo_credentials_status() -> None:
@@ -171,6 +174,12 @@ def main() -> int:
     args = ap.parse_args()
 
     load_swarm_demo_env(extra_env_file=args.env_file)
+    _force_api_demo_trading_host()
+    print(
+        "SYGNIF_ORDER_REST_BASE=https://api-demo.bybit.com "
+        "(API demo / mainnet-mirrored USDT linear; OVERSEER_BYBIT_HEDGE_MAINNET=0)",
+        flush=True,
+    )
     os.environ.setdefault("SYGNIF_INSTANCE_ROOTS_SCAN", "1")
     os.environ.setdefault("SYGNIF_SWARM_EXTEND_PYTHONPATH", "1")
     os.environ.setdefault("SYGNIF_INSTANCE_ROOTS_EXCLUDE", "logs:intel")

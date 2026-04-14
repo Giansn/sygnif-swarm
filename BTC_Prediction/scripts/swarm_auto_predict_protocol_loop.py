@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-**Swarm + predict-protocol auto trading (Bybit demo)** — launcher for ``btc_predict_protocol_loop.py``.
+**Swarm + predict-protocol auto trading (Bybit API demo)** — launcher for ``btc_predict_protocol_loop.py``.
+Orders use ``https://api-demo.bybit.com`` + ``BYBIT_DEMO_*`` (mainnet-style BTCUSDT linear, **not** live ``api.bybit.com``).
 
 Sets operator env so each loop iteration:
 
@@ -126,6 +127,13 @@ def main() -> int:
     args, rest = ap.parse_known_args()
 
     load_swarm_demo_env(extra_env_file=args.env_file)
+    # Venue orders: **Bybit API demo** only (not ``api.bybit.com``), even if .env had hedge mainnet flags.
+    os.environ["OVERSEER_BYBIT_HEDGE_MAINNET"] = "0"
+    print(
+        "[swarm-auto] SYGNIF_ORDER_REST_BASE=https://api-demo.bybit.com "
+        "(API demo / mainnet-mirrored USDT linear; not api.bybit.com)",
+        flush=True,
+    )
     # Multi-repo + Truthcoin context (override in .env / swarm_operator.env if undesired)
     os.environ.setdefault("SYGNIF_INSTANCE_ROOTS_SCAN", "1")
     os.environ.setdefault("SYGNIF_SWARM_EXTEND_PYTHONPATH", "1")
