@@ -133,8 +133,10 @@ def sygnif_swarm_btc_future_mode() -> str:
     Returns ``off``, ``demo`` (Bybit API demo ``BYBIT_DEMO_*``), or ``trade`` (mainnet ``BYBIT_API_*`` linear
     ``position/list`` — same credential family as ``ac``).
 
-    If you enable **both** ``trade`` **bf** and ``SYGNIF_SWARM_BYBIT_ACCOUNT`` **ac**, the same mainnet position may
-    contribute twice to the swarm mean unless you disable one of them.
+    When ``SYGNIF_SWARM_BYBIT_ACCOUNT`` is on and ``SYGNIF_SWARM_BTC_FUTURE_SYMBOL`` matches
+    ``SYGNIF_SWARM_BYBIT_SYMBOL``, ``compute_swarm`` uses **one** mainnet ``position/list`` and a single **bf** vote;
+    ``bybit_account`` metadata is still filled (``fused_with_btc_future_trade``) without a separate **ac** vote.
+    If symbols differ, **ac** and **bf** both run (two reads).
     """
     raw = (os.environ.get("SYGNIF_SWARM_BTC_FUTURE") or "").strip().lower()
     if raw in ("", "0", "false", "no", "off"):
@@ -858,7 +860,8 @@ def build_bybit_open_pnl_report(
     **Open** (unrealised) USDT P/L from **existing** linear ``position/list`` snapshots — no extra HTTP calls.
 
     The **bf** venue row uses ``btc_future_meta["position"]`` when ``btc_future`` is enabled (demo or **trade** mode).
-    ``mainnet`` uses ``resp_ac`` when ``SYGNIF_SWARM_BYBIT_ACCOUNT`` or admin tier.
+    ``mainnet`` uses ``resp_ac`` when signed account reads are on, except when ``account_meta.fused_with_btc_future_trade``
+    (same snapshot already counted under the **trade** bf venue — avoids double sum).
     """
     if not _bybit_open_pnl_enabled():
         return {"enabled": False}
@@ -885,9 +888,13 @@ def build_bybit_open_pnl_report(
         ven_d["reason"] = "SYGNIF_SWARM_BTC_FUTURE_off"
     rep["venues"][bf_venue] = ven_d
 
-    # --- mainnet (signed ``ac``) ---
+    # --- mainnet (signed ``ac``), omitted from sums when merged into trade **bf** ---
     ven_m: dict[str, Any] = {"venue": "mainnet"}
-    if account_meta.get("enabled"):
+    fused_ac_bf = bool(account_meta.get("fused_with_btc_future_trade"))
+    if fused_ac_bf and btc_future_meta.get("profile") == "trade":
+        ven_m["skipped"] = True
+        ven_m["reason"] = "fused_into_btc_future_trade_bf"
+    elif account_meta.get("enabled"):
         ven_m["symbol"] = account_meta.get("symbol")
         ven_m["ok"] = bool(account_meta.get("ok"))
         snap_ac = linear_position_snapshot_from_response(resp_ac) if resp_ac is not None else None
@@ -1018,9 +1025,21 @@ def compute_swarm(
     account_meta: dict[str, Any] = {"enabled": False}
     wallet_meta: dict[str, Any] = {"enabled": False}
     resp_ac_main: dict[str, Any] | None = None
-    if _include_signed_position():
-        sym_ac = os.environ.get("SYGNIF_SWARM_BYBIT_SYMBOL", "BTCUSDT").strip().upper() or "BTCUSDT"
-        ac_ttl = _env_float("SYGNIF_SWARM_BYBIT_ACCOUNT_CACHE_SEC", 60.0)
+
+    bf_mode = sygnif_swarm_btc_future_mode()
+    sym_bf = (
+        os.environ.get("SYGNIF_SWARM_BTC_FUTURE_SYMBOL", "BTCUSDT").strip().upper() or "BTCUSDT"
+        if bf_mode in ("demo", "trade")
+        else ""
+    )
+    ac_wanted = _include_signed_position()
+    sym_ac = (
+        os.environ.get("SYGNIF_SWARM_BYBIT_SYMBOL", "BTCUSDT").strip().upper() or "BTCUSDT" if ac_wanted else ""
+    )
+    ac_ttl = _env_float("SYGNIF_SWARM_BYBIT_ACCOUNT_CACHE_SEC", 60.0) if ac_wanted else 60.0
+    fuse_trade_ac = bool(ac_wanted and bf_mode == "trade" and sym_bf and sym_ac == sym_bf)
+
+    if ac_wanted and not fuse_trade_ac:
         account_meta = {
             "enabled": True,
             "mainnet": True,
@@ -1040,11 +1059,21 @@ def compute_swarm(
             and resp_ac.get("retCode") == 0
             and account_meta["has_mainnet_keys"]
         )
+    elif fuse_trade_ac:
+        account_meta = {
+            "enabled": True,
+            "mainnet": True,
+            "symbol": sym_ac,
+            "admin_tier": _admin_tier_enabled(),
+            "has_mainnet_keys": bool(
+                os.environ.get("BYBIT_API_KEY", "").strip()
+                and os.environ.get("BYBIT_API_SECRET", "").strip()
+            ),
+            "fused_with_btc_future_trade": True,
+        }
 
     btc_future_meta: dict[str, Any] = {"enabled": False}
-    bf_mode = sygnif_swarm_btc_future_mode()
     if bf_mode in ("demo", "trade"):
-        sym_bf = os.environ.get("SYGNIF_SWARM_BTC_FUTURE_SYMBOL", "BTCUSDT").strip().upper() or "BTCUSDT"
         bf_ttl = _env_float("SYGNIF_SWARM_BTC_FUTURE_CACHE_SEC", 60.0)
         if bf_mode == "demo":
             has_demo = bool(
@@ -1100,8 +1129,11 @@ def compute_swarm(
             if not has_trade:
                 votes.append(("bf", 0, "no_trade_creds"))
                 btc_future_meta["ok"] = False
+                if fuse_trade_ac:
+                    account_meta["ok"] = False
             else:
-                resp_bf = fetch_mainnet_linear_position_list(sym_bf, cache_sec=bf_ttl)
+                pos_ttl = max(ac_ttl, bf_ttl) if fuse_trade_ac else bf_ttl
+                resp_bf = fetch_mainnet_linear_position_list(sym_bf, cache_sec=pos_ttl)
                 v_bf, d_bf = vote_account_position_from_response(resp_bf)
                 votes.append(("bf", v_bf, d_bf))
                 btc_future_meta["ok"] = (
@@ -1112,6 +1144,13 @@ def compute_swarm(
                 snap = linear_position_snapshot_from_response(resp_bf)
                 if snap is not None:
                     btc_future_meta["position"] = snap
+                if fuse_trade_ac:
+                    resp_ac_main = resp_bf
+                    account_meta["ok"] = (
+                        resp_bf is not None
+                        and resp_bf.get("retCode") == 0
+                        and account_meta["has_mainnet_keys"]
+                    )
         if explore_doc:
             btc_future_meta["hivemind_explore"] = explore_doc
 

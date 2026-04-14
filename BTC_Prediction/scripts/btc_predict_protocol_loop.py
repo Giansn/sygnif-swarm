@@ -25,8 +25,8 @@ the ASAP script, optimised for **closed-loop** automation.
 **Env**
 - ``SYGNIF_SWARM_GATE_LOOP`` — when ``1``/``true`` with ``--execute``, run ``compute_swarm()`` +
   ``write_fused_sidecar`` + ``swarm_fusion_allows`` each iteration before **new** entries; flips/exits still
-  follow ``decide_side``. Set ``SYGNIF_SWARM_BTC_FUTURE=1`` (default) or ``SYGNIF_SWARM_BTC_FUTURE=trade`` for **mainnet**
-  **bf** (``BYBIT_API_*``); defaulted to ``1`` when gate is on. See
+  follow ``decide_side``. Set ``SYGNIF_SWARM_BTC_FUTURE=1`` (demo **bf**) or ``trade`` (mainnet **bf**); with **ac** on and
+  matching symbols, Swarm uses one fused **bf** vote. Default ``1`` when gate is on. See
   ``scripts/swarm_auto_predict_protocol_loop.py``.
 - ``SYGNIF_SWARM_TP_USDT_TARGET`` — optional (e.g. ``50``): after a successful **open**, set a take-profit
   on the linear leg so that **approx.** ``qty * |TP - entry| ≈`` this USDT (Bybit demo REST).
