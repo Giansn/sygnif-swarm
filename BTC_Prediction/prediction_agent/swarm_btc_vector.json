@@ -1,0 +1,19 @@
+{
+  "contract": "swarm_btc_flow/v1",
+  "stage": "vector",
+  "generated_utc": "2026-04-13T20:37:36Z",
+  "swarm_mean": -0.25,
+  "swarm_label": "SWARM_MIXED",
+  "swarm_conflict": true,
+  "swarm_engine": "python",
+  "ml_detail": "BEARISH",
+  "ch_detail": "up82",
+  "sc_detail": "neutral",
+  "ta_detail": "s30",
+  "channel_prob_down_pct": 17.75,
+  "channel_prob_up_pct": 82.25,
+  "ta_score": 30.0,
+  "prediction_consensus": "BEARISH",
+  "sources_n": 4,
+  "missing_files": []
+}

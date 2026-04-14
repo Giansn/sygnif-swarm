@@ -1,0 +1,17 @@
+{
+  "contract": "swarm_btc_flow/v1",
+  "stage": "synth",
+  "generated_utc": "2026-04-13T20:37:36Z",
+  "btc_usd_price": null,
+  "price_symbol": "BTCUSDT",
+  "order_signal": "HOLD",
+  "amount_btc": "signal only",
+  "leverage": 5,
+  "side": "FLAT",
+  "btc_dump_risk_pct": 17.75,
+  "bull_bear": "MIXED",
+  "analysis_only": true,
+  "swarm_label": "SWARM_MIXED",
+  "swarm_conflict": true,
+  "swarm_mean": -0.25
+}

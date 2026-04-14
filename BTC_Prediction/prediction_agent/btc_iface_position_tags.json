@@ -1,0 +1,10 @@
+{
+  "BTCUSDT": {
+    "open_tag": "predict_loop",
+    "open_detail": "vote=-1 RFΔ=-21.03 XGBΔ=0.64 logreg=DOWN/66.3%",
+    "open_order_id": "aebe84b2-b265-447f-8000-5cf1d914ba82",
+    "open_order_link_id": "sygPL000001OS",
+    "pos_side": "short",
+    "opened_ms": 1776162553673
+  }
+}

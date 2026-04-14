@@ -1,0 +1,129 @@
+{
+  "generated_utc": "2026-04-14T16:09:05Z",
+  "channel_completed_utc": "2026-04-14T16:09:05Z",
+  "predict_runner_alignment": {
+    "aligned_to_runner_generated_utc": true,
+    "runner_generated_utc": "2026-04-14T16:09:05Z",
+    "channel_completed_utc": "2026-04-14T16:09:05Z",
+    "runner_source_path": "/home/ubuntu/SYGNIF/prediction_agent/btc_prediction_output.json"
+  },
+  "strategy_bridge": {
+    "btc_strategy_0_1_rule_registry": "letscrash/btc_strategy_0_1_rule_registry.json",
+    "r01_governance_enabled": true,
+    "r01_p_down_min_pct": 96.5,
+    "r01_runner_consensus_equals": "BEARISH",
+    "training_flow": "channel_training \u2192 training_channel_output.json (recognition + btc_predict_runner_snapshot) \u2192 BTC_Strategy_0_1 confirm + btc_analysis_order_signal",
+    "runner_flags_hint": "Set BTC_PREDICT_CALIBRATE=1 for isotonic LogReg; BTC_PREDICT_DIR_C for --dir-C"
+  },
+  "ruleprediction_briefing": {
+    "r01": "L0: next-bar / runner extremes in training JSON are timing context \u2014 not sole basis to widen long risk; re-run channel if stale.",
+    "r02": "Governance: HTF regime + dump script + btc_trend_long_row before trusting LTF pine-style overlays; R03 sleeve stays subordinate."
+  },
+  "inflow": {
+    "channels": [
+      {
+        "name": "bybit_1h",
+        "path": "/home/ubuntu/SYGNIF/finance_agent/btc_specialist/data/btc_1h_ohlcv.json",
+        "status": "ok",
+        "rows": 1600,
+        "last_candle_ms": 1776182400000
+      },
+      {
+        "name": "bybit_daily",
+        "path": "/home/ubuntu/SYGNIF/finance_agent/btc_specialist/data/btc_daily_90d.json",
+        "status": "ok",
+        "rows": 120,
+        "last_candle_ms": 1776124800000
+      },
+      {
+        "name": "nautilus_spot_btc_bundle",
+        "path": "/home/ubuntu/SYGNIF/finance_agent/btc_specialist/data/nautilus_spot_btc_market_bundle.json",
+        "status": "ok",
+        "rows": 1600,
+        "last_candle_ms": 1776182400000
+      }
+    ],
+    "timeframe": "1h",
+    "window": 5,
+    "test_ratio": 0.2
+  },
+  "recognition": {
+    "model": "sklearn_logistic_next_bar_direction",
+    "holdout_brier_score": 0.1815,
+    "last_bar_probability_up_pct": 1.28,
+    "last_bar_probability_down_pct": 98.72,
+    "holdout_when_predicted_up_empirical_win_rate": 77.54,
+    "holdout_when_predicted_up_empirical_loss_rate": 22.46,
+    "btc_predict_runner_snapshot": {
+      "generated_utc": "2026-04-14T16:09:05Z",
+      "timeframe": "1h",
+      "window_size": 5,
+      "model_options": {
+        "dir_C": 1.0,
+        "calibrate": false,
+        "regime_features": true
+      },
+      "nautilus_research": {
+        "sidecar_signal": {
+          "generated_utc": "2026-04-14T16:09:05Z",
+          "bias": "long",
+          "close": 75319.8,
+          "rsi14": 64.05
+        },
+        "spot_market_bundle": {
+          "generated_utc": "2026-04-14T16:05:22Z",
+          "symbol": "BTCUSDT-SPOT.BYBIT"
+        }
+      },
+      "nautilus_consensus_meta": {
+        "sidecar_bias": "long",
+        "note": "Sidecar long vs bearish models \u2014 marked cautious"
+      },
+      "last_candle_utc": "2026-04-14T16:00:00Z",
+      "current_close": 75319.8,
+      "predictions": {
+        "random_forest": {
+          "next_mean": 74842.28,
+          "delta": -477.52
+        },
+        "xgboost": {
+          "next_mean": 74454.5,
+          "delta": -865.3
+        },
+        "direction_logistic": {
+          "label": "DOWN",
+          "confidence": 98.3
+        },
+        "consensus": "BEARISH",
+        "consensus_nautilus_enhanced": "MIXED"
+      },
+      "backtest_metrics": {
+        "random_forest": {
+          "MAE": 162.5047,
+          "RMSE": 217.4926,
+          "MAPE": 0.2312,
+          "Direction_Acc": 72.0635
+        },
+        "xgboost": {
+          "MAE": 161.8985,
+          "RMSE": 230.6295,
+          "MAPE": 0.2307,
+          "Direction_Acc": 66.9841
+        },
+        "direction_logistic": {
+          "Accuracy": 72.7,
+          "Precision": 79.41,
+          "Recall": 65.06,
+          "F1": 71.52
+        }
+      }
+    }
+  },
+  "risk_assessment": {
+    "disclaimer": "Educational / research only. No fees, slippage, or funding in naive stats; regime shift breaks backtests.",
+    "historical_1bar_return_var_95_pct": -0.8004464208918405,
+    "historical_1bar_return_var_99_pct": -1.3365390492861768,
+    "naive_long_if_model_up_max_drawdown_pct": -2.39,
+    "naive_strategy_note": "Follow-holdout-predictions on close-to-close returns; not SygnifStrategy execution."
+  }
+}

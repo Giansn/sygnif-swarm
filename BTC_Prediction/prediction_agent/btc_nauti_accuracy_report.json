@@ -1,0 +1,11 @@
+{
+  "generated_utc": "2026-04-13T13:01:49Z",
+  "total_rows": 1,
+  "resolved": 1,
+  "open": 0,
+  "consensus_direction_accuracy_pct": 0.0,
+  "logreg_direction_accuracy_pct": 0.0,
+  "last_20_consensus_pct": 0.0,
+  "last_20_logreg_pct": 0.0,
+  "target_note": "90% next-bar direction is unrealistic for BTC; use report to track drift."
+}

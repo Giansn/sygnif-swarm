@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "symbol": "BTCUSDT",
+  "horizon_hours": 24,
+  "interval": "60",
+  "generated_utc": "2026-04-14T16:27:55Z",
+  "spot_usd": 75345.1,
+  "data": {
+    "ohlcv_path": "/home/ubuntu/SYGNIF/finance_agent/btc_specialist/data/btc_1h_ohlcv.json",
+    "n_closes": 1600,
+    "atr_pct_bar": 0.609339
+  },
+  "empirical_24h": {
+    "bars_forward": 24,
+    "n_samples": 1576,
+    "p_up": 0.4956,
+    "p_down": 0.5044,
+    "p_neutral_abs": 0.1999,
+    "median_fwd_return_pct": -0.0302,
+    "p90_abs_fwd_pct": 4.2028,
+    "neutral_band_abs_pct": 0.5948,
+    "sigma_hat_abs_pct": 2.9851,
+    "p_abs_gt_sigma_hat": 0.2392
+  },
+  "runner_snapshot": {
+    "consensus": "BEARISH",
+    "direction_label": "DOWN",
+    "direction_confidence_pct": 98.3
+  },
+  "synthesis": {
+    "bias_24h": "DOWN",
+    "p_up_blended": 0.3921,
+    "p_up_empirical": 0.4956,
+    "p_down_empirical": 0.5044,
+    "used_runner": true,
+    "runner_weight": 0.35,
+    "confidence_0_100": 22
+  },
+  "disclaimer": "Empirical forward-return frequencies on past 1h data + optional short-horizon model blend; not investment advice. Regimes shift."
+}

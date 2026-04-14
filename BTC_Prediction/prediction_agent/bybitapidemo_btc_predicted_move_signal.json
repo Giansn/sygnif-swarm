@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "generated_utc": "2026-04-13T20:56:46Z",
+  "venue": "bybit_api_demo",
+  "consumer_tag": "bybitapidemo",
+  "symbol_linear": "BTCUSDT",
+  "predicted_move": "flat",
+  "signal_active": false,
+  "governance": {
+    "min_probability_pct": 75.0,
+    "governance_probability_pct": 82.25,
+    "governance_probability_source": "training_channel_max(up,down)",
+    "passed": false,
+    "reasons": [
+      "swarm_conflict",
+      "swarm_not_directional:SWARM_MIXED"
+    ]
+  },
+  "swarm": {
+    "swarm_mean": -0.25,
+    "swarm_label": "SWARM_MIXED",
+    "swarm_conflict": true,
+    "sources_n": 4
+  }
+}

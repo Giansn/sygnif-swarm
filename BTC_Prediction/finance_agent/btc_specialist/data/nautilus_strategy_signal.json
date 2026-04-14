@@ -1,0 +1,12 @@
+{
+  "generated_utc": "2026-04-14T16:24:05Z",
+  "source": "nautilus_sidecar_strategy",
+  "ohlcv_rows": 1600,
+  "last_t_ms": 1776182400000,
+  "close": 75319.8,
+  "rsi14": 64.05,
+  "ema20": 74250.81,
+  "ema50": 73238.21,
+  "bias": "long",
+  "disclaimer": "Research hint only \u2014 not wired to live entries by default."
+}

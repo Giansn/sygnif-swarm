@@ -1,0 +1,38 @@
+{
+  "generated_utc": "2026-04-13T13:02:09Z",
+  "timeframe": "1h",
+  "test_ratio": 0.2,
+  "best": {
+    "test_direction_accuracy_pct": 75.24,
+    "window": 3,
+    "C": 0.25
+  },
+  "grid_size": 30,
+  "top_5": [
+    {
+      "window": 3,
+      "C": 0.25,
+      "test_dir_accuracy": 75.24
+    },
+    {
+      "window": 3,
+      "C": 0.1,
+      "test_dir_accuracy": 74.92
+    },
+    {
+      "window": 12,
+      "C": 0.25,
+      "test_dir_accuracy": 74.76
+    },
+    {
+      "window": 5,
+      "C": 0.25,
+      "test_dir_accuracy": 73.97
+    },
+    {
+      "window": 7,
+      "C": 0.25,
+      "test_dir_accuracy": 73.89
+    }
+  ]
+}

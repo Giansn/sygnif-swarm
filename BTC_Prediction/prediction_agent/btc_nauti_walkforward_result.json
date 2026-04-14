@@ -1,0 +1,15 @@
+{
+  "generated_utc": "2026-04-13T13:06:27Z",
+  "timeframe": "1h",
+  "window": 3,
+  "C": 0.25,
+  "calibrate": false,
+  "n_train": 400,
+  "n_test": 50,
+  "step": 40,
+  "folds": 29,
+  "mean_test_direction_accuracy_pct": 70.58,
+  "std_pct": 5.35,
+  "min_pct": 57.14,
+  "max_pct": 79.59
+}

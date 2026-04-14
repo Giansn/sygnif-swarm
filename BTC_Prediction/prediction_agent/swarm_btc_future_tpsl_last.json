@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "skipped": null,
+  "detail": {
+    "symbol": "BTCUSDT",
+    "side": "Sell",
+    "positionIdx": 0,
+    "take_profit": "74371.17",
+    "stop_loss": "74792.96",
+    "trailing_stop": "152.55",
+    "tp_note": "tp=consensus_mid_below_avg|clamped_lt_mark",
+    "mid_next_mean": 74521.905,
+    "avg_entry": 74532.1,
+    "mark_price": 74378.61
+  },
+  "bybit": {
+    "retCode": 0,
+    "retMsg": "OK",
+    "result": {},
+    "retExtInfo": {},
+    "time": 1776163887250
+  },
+  "schema_version": 1
+}
