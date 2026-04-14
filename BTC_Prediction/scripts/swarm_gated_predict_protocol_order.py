@@ -24,7 +24,7 @@ Flow
 **Defaults:** ``--manual-notional-usdt 2000`` ``--manual-leverage 50``.
 
 **Continuous auto trading (loop):** ``scripts/swarm_auto_predict_protocol_loop.py`` sets ``SYGNIF_SWARM_GATE_LOOP=1``,
-``SYGNIF_SWARM_BTC_FUTURE=1``, fusion alignment, and optional ``SYGNIF_SWARM_TP_USDT_TARGET=50`` — then runs
+``SYGNIF_SWARM_BTC_FUTURE=1`` (demo **bf**) or ``SYGNIF_SWARM_BTC_FUTURE=trade`` (mainnet **bf**), fusion alignment, and optional ``SYGNIF_SWARM_TP_USDT_TARGET=50`` — then runs
 ``btc_predict_protocol_loop.py`` (still requires ACK + ``--execute``).
 
 **Defaults in this script** (after loading dotenv): ``SYGNIF_INSTANCE_ROOTS_SCAN=1``,

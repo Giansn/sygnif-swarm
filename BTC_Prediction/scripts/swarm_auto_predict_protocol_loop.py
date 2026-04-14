@@ -5,7 +5,7 @@
 Sets operator env so each loop iteration:
 
 - runs ``compute_swarm()`` + ``write_fused_sidecar`` + ``swarm_fusion_allows`` (``SYGNIF_SWARM_GATE_LOOP=1``)
-- requires **btc_future** branch in Swarm (``SYGNIF_SWARM_BTC_FUTURE=1``) and fusion **bf** alignment
+- requires **btc_future** branch in Swarm (``SYGNIF_SWARM_BTC_FUTURE=1`` or ``trade``) and fusion **bf** alignment
   (same as ``swarm_gated_predict_protocol_order.py``)
 - **btc_future governance:** ``SYGNIF_SWARM_BTC_FUTURE_GOVERNANCE=1`` + raw **bf** vote alignment
   (``SWARM_ORDER_REQUIRE_BTC_FUTURE_VOTE``); flat demo allowed if ``SWARM_ORDER_BTC_FUTURE_VOTE_FLAT_PASS=1``

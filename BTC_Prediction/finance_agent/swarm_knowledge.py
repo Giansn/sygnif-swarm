@@ -13,11 +13,11 @@ Sources (votes in {-1, 0, +1} unless noted):
   - ``mn`` — public ``GET /v5/market/tickers`` (no keys).
   - ``ac`` — signed ``GET /v5/position/list`` (linear) when ``SYGNIF_SWARM_BYBIT_ACCOUNT=1``
     **or** ``SYGNIF_SWARM_BYBIT_MODE=admin``.
-  - ``bf`` (**btc_future**) — signed **Bybit API demo** linear ``position/list`` via
-    ``trade_overseer/bybit_linear_hedge.py`` when ``SYGNIF_SWARM_BTC_FUTURE=1`` and
-    ``BYBIT_DEMO_API_KEY`` / ``BYBIT_DEMO_API_SECRET`` are set. Same vote mapping as ``ac``;
-    **demo host only** (not mainnet). Read-only. JSON includes ``btc_future.position`` (TP/SL,
-    size, PnL, …) from ``linear_position_snapshot_from_response``.
+  - ``bf`` (**btc_future**) — signed linear ``position/list`` when ``SYGNIF_SWARM_BTC_FUTURE`` is on:
+    **demo** mode (``1`` / ``true`` / ``demo`` / …) uses **Bybit API demo** (``BYBIT_DEMO_*`` on demo host).
+    **trade** mode (``SYGNIF_SWARM_BTC_FUTURE=trade``) uses **mainnet** (``BYBIT_API_KEY`` / ``BYBIT_API_SECRET``,
+    same read path as ``ac``). Same vote mapping as ``ac``. Read-only. JSON includes ``btc_future.position`` from
+    ``linear_position_snapshot_from_response``. ``btc_future.profile`` is ``btc_future`` (demo) or ``trade`` (mainnet).
 
 **Admin tier** (expanded **read** scope, still **no writes**):
   ``SYGNIF_SWARM_BYBIT_MODE=admin`` (alias: ``SYGNIF_SWARM_BYBIT_ADMIN=1``) — same as enabling
@@ -35,15 +35,16 @@ Env (signed reads): ``BYBIT_API_KEY`` / ``BYBIT_API_SECRET``, ``SYGNIF_SWARM_BYB
 ``SYGNIF_SWARM_BYBIT_ACCOUNT_CACHE_SEC``, ``SYGNIF_SWARM_WALLET_CACHE_SEC`` (default ``60``),
 ``SYGNIF_SWARM_WALLET_ROUND_USDT`` (default ``1000``).
 
-Env (**btc_future** / demo linear position vote): ``SYGNIF_SWARM_BTC_FUTURE=1``,
-``SYGNIF_SWARM_BTC_FUTURE_SYMBOL`` (default ``BTCUSDT``), ``SYGNIF_SWARM_BTC_FUTURE_CACHE_SEC`` (default ``60``).
-Optional debug (no secret): ``SYGNIF_SWARM_PRINT_DEMO_API_KEY_HINT=1`` adds ``demo_api_key_hint`` (masked
-``BYBIT_DEMO_API_KEY``) under ``btc_future`` so you can confirm which key Swarm loaded.
+Env (**btc_future** / ``bf`` vote): ``SYGNIF_SWARM_BTC_FUTURE`` — ``1`` / ``true`` / ``demo`` / … for **demo**
+linear position; ``trade`` for **mainnet** linear position (same keys as ``ac``). ``SYGNIF_SWARM_BTC_FUTURE_SYMBOL``
+(default ``BTCUSDT``), ``SYGNIF_SWARM_BTC_FUTURE_CACHE_SEC`` (default ``60``). Optional debug (no secret):
+``SYGNIF_SWARM_PRINT_DEMO_API_KEY_HINT=1`` adds ``demo_api_key_hint`` (masked ``BYBIT_DEMO_API_KEY``) in **demo** mode;
+``SYGNIF_SWARM_PRINT_TRADE_API_KEY_HINT=1`` adds ``trade_api_key_hint`` (masked ``BYBIT_API_KEY``) in **trade** mode.
 
 **Truthcoin Drivechain (Bitcoin Hivemind)** (read-only CLI; see `Truthcoin README
 <https://github.com/LayerTwo-Labs/truthcoin-dc/blob/master/README.md>`__): when enabled, ``compute_swarm`` may fetch
 ``hivemind_explore`` (``slot-status``, ``slot-list --status voting``, ``status``, ``market-list``) and attach it under
-``btc_future`` when ``SYGNIF_SWARM_BTC_FUTURE=1``, plus top-level ``hivemind_explore`` when the Truthcoin integration is
+``btc_future`` when ``SYGNIF_SWARM_BTC_FUTURE`` is **demo** or **trade**, plus top-level ``hivemind_explore`` when the Truthcoin integration is
 active. **Processing core:** ``SYGNIF_SWARM_CORE_ENGINE=hivemind`` drives ``swarm_mean`` / ``swarm_label`` from the
 Hivemind liveness vote when the node is reachable; otherwise Python mean over file + venue sources. **``hm`` vote:**
 ``SYGNIF_SWARM_HIVEMIND_VOTE=1`` or ``hivemind`` core appends ``sources.hm``. **Host visibility (not UNIX root):**
@@ -69,8 +70,8 @@ Configure ``SYGNIF_TRUTHCOIN_DC_ROOT``, ``SYGNIF_TRUTHCOIN_DC_CLI``, ``SYGNIF_TR
 (default ``120``).
 
 **Open (unrealised) P/L:** ``SYGNIF_SWARM_BYBIT_OPEN_PNL=1`` (default **on**) adds ``bybit_open_pnl`` — parses
-``unrealisedPnl`` from **existing** ``GET /v5/position/list`` responses (``btc_future.position`` on demo when
-``SYGNIF_SWARM_BTC_FUTURE=1``, and mainnet ``ac`` snapshot when ``SYGNIF_SWARM_BYBIT_ACCOUNT`` or admin mode). No extra
+``unrealisedPnl`` from **existing** ``GET /v5/position/list`` responses (``btc_future.position`` when **bf** is demo or
+trade mode, and mainnet ``ac`` snapshot when ``SYGNIF_SWARM_BYBIT_ACCOUNT`` or admin mode). No extra
 HTTP calls. Set ``SYGNIF_SWARM_BYBIT_OPEN_PNL=0`` to omit.
 
 Optional **demo key bootstrap** (HTTPS only; used before ``bf`` when ``BYBIT_DEMO_*`` unset):
@@ -123,6 +124,26 @@ def _prediction_agent_dir() -> Path:
 
 def _env_truthy(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def sygnif_swarm_btc_future_mode() -> str:
+    """
+    How ``SYGNIF_SWARM_BTC_FUTURE`` drives the **bf** / ``btc_future`` branch in ``compute_swarm``.
+
+    Returns ``off``, ``demo`` (Bybit API demo ``BYBIT_DEMO_*``), or ``trade`` (mainnet ``BYBIT_API_*`` linear
+    ``position/list`` — same credential family as ``ac``).
+
+    If you enable **both** ``trade`` **bf** and ``SYGNIF_SWARM_BYBIT_ACCOUNT`` **ac**, the same mainnet position may
+    contribute twice to the swarm mean unless you disable one of them.
+    """
+    raw = (os.environ.get("SYGNIF_SWARM_BTC_FUTURE") or "").strip().lower()
+    if raw in ("", "0", "false", "no", "off"):
+        return "off"
+    if raw == "trade":
+        return "trade"
+    if raw in ("1", "true", "yes", "on", "demo"):
+        return "demo"
+    return "off"
 
 
 def _env_float(name: str, default: float) -> float:
@@ -836,7 +857,7 @@ def build_bybit_open_pnl_report(
     """
     **Open** (unrealised) USDT P/L from **existing** linear ``position/list`` snapshots — no extra HTTP calls.
 
-    ``demo`` uses ``btc_future_meta["position"]`` (when ``SYGNIF_SWARM_BTC_FUTURE=1``).
+    The **bf** venue row uses ``btc_future_meta["position"]`` when ``btc_future`` is enabled (demo or **trade** mode).
     ``mainnet`` uses ``resp_ac`` when ``SYGNIF_SWARM_BYBIT_ACCOUNT`` or admin tier.
     """
     if not _bybit_open_pnl_enabled():
@@ -844,8 +865,9 @@ def build_bybit_open_pnl_report(
     rep: dict[str, Any] = {"enabled": True, "venues": {}}
     sums: list[float] = []
 
-    # --- demo (Bybit API demo linear) ---
-    ven_d: dict[str, Any] = {"venue": "demo"}
+    # --- bf snapshot (demo **or** trade-mode mainnet under ``btc_future``) ---
+    bf_venue = "trade" if btc_future_meta.get("profile") == "trade" else "demo"
+    ven_d: dict[str, Any] = {"venue": bf_venue}
     pos_bf = btc_future_meta.get("position") if isinstance(btc_future_meta.get("position"), dict) else None
     if btc_future_meta.get("enabled"):
         ven_d["symbol"] = btc_future_meta.get("symbol")
@@ -861,7 +883,7 @@ def build_bybit_open_pnl_report(
     else:
         ven_d["skipped"] = True
         ven_d["reason"] = "SYGNIF_SWARM_BTC_FUTURE_off"
-    rep["venues"]["demo"] = ven_d
+    rep["venues"][bf_venue] = ven_d
 
     # --- mainnet (signed ``ac``) ---
     ven_m: dict[str, Any] = {"venue": "mainnet"}
@@ -1020,39 +1042,76 @@ def compute_swarm(
         )
 
     btc_future_meta: dict[str, Any] = {"enabled": False}
-    if _env_truthy("SYGNIF_SWARM_BTC_FUTURE"):
+    bf_mode = sygnif_swarm_btc_future_mode()
+    if bf_mode in ("demo", "trade"):
         sym_bf = os.environ.get("SYGNIF_SWARM_BTC_FUTURE_SYMBOL", "BTCUSDT").strip().upper() or "BTCUSDT"
         bf_ttl = _env_float("SYGNIF_SWARM_BTC_FUTURE_CACHE_SEC", 60.0)
-        has_demo = bool(
-            os.environ.get("BYBIT_DEMO_API_KEY", "").strip()
-            and os.environ.get("BYBIT_DEMO_API_SECRET", "").strip()
-        )
-        btc_future_meta = {
-            "enabled": True,
-            "profile": "btc_future",
-            "demo": True,
-            "symbol": sym_bf,
-            "has_demo_keys": has_demo,
-        }
-        if has_demo and _env_truthy("SYGNIF_SWARM_PRINT_DEMO_API_KEY_HINT"):
-            kdemo = os.environ.get("BYBIT_DEMO_API_KEY", "").strip()
-            if kdemo:
-                btc_future_meta["demo_api_key_hint"] = _masked_api_key_hint(kdemo)
-        if not has_demo:
-            votes.append(("bf", 0, "no_demo_creds"))
-            btc_future_meta["ok"] = False
-        else:
-            resp_bf = fetch_demo_linear_position_list(sym_bf, cache_sec=bf_ttl)
-            v_bf, d_bf = vote_account_position_from_response(resp_bf)
-            votes.append(("bf", v_bf, d_bf))
-            btc_future_meta["ok"] = (
-                resp_bf is not None
-                and resp_bf.get("retCode") == 0
-                and has_demo
+        if bf_mode == "demo":
+            has_demo = bool(
+                os.environ.get("BYBIT_DEMO_API_KEY", "").strip()
+                and os.environ.get("BYBIT_DEMO_API_SECRET", "").strip()
             )
-            snap = linear_position_snapshot_from_response(resp_bf)
-            if snap is not None:
-                btc_future_meta["position"] = snap
+            btc_future_meta = {
+                "enabled": True,
+                "profile": "btc_future",
+                "mode": "demo",
+                "demo": True,
+                "mainnet": False,
+                "symbol": sym_bf,
+                "has_demo_keys": has_demo,
+            }
+            if has_demo and _env_truthy("SYGNIF_SWARM_PRINT_DEMO_API_KEY_HINT"):
+                kdemo = os.environ.get("BYBIT_DEMO_API_KEY", "").strip()
+                if kdemo:
+                    btc_future_meta["demo_api_key_hint"] = _masked_api_key_hint(kdemo)
+            if not has_demo:
+                votes.append(("bf", 0, "no_demo_creds"))
+                btc_future_meta["ok"] = False
+            else:
+                resp_bf = fetch_demo_linear_position_list(sym_bf, cache_sec=bf_ttl)
+                v_bf, d_bf = vote_account_position_from_response(resp_bf)
+                votes.append(("bf", v_bf, d_bf))
+                btc_future_meta["ok"] = (
+                    resp_bf is not None
+                    and resp_bf.get("retCode") == 0
+                    and has_demo
+                )
+                snap = linear_position_snapshot_from_response(resp_bf)
+                if snap is not None:
+                    btc_future_meta["position"] = snap
+        else:
+            has_trade = bool(
+                os.environ.get("BYBIT_API_KEY", "").strip()
+                and os.environ.get("BYBIT_API_SECRET", "").strip()
+            )
+            btc_future_meta = {
+                "enabled": True,
+                "profile": "trade",
+                "mode": "trade",
+                "demo": False,
+                "mainnet": True,
+                "symbol": sym_bf,
+                "has_trade_keys": has_trade,
+            }
+            if has_trade and _env_truthy("SYGNIF_SWARM_PRINT_TRADE_API_KEY_HINT"):
+                kt = os.environ.get("BYBIT_API_KEY", "").strip()
+                if kt:
+                    btc_future_meta["trade_api_key_hint"] = _masked_api_key_hint(kt)
+            if not has_trade:
+                votes.append(("bf", 0, "no_trade_creds"))
+                btc_future_meta["ok"] = False
+            else:
+                resp_bf = fetch_mainnet_linear_position_list(sym_bf, cache_sec=bf_ttl)
+                v_bf, d_bf = vote_account_position_from_response(resp_bf)
+                votes.append(("bf", v_bf, d_bf))
+                btc_future_meta["ok"] = (
+                    resp_bf is not None
+                    and resp_bf.get("retCode") == 0
+                    and has_trade
+                )
+                snap = linear_position_snapshot_from_response(resp_bf)
+                if snap is not None:
+                    btc_future_meta["position"] = snap
         if explore_doc:
             btc_future_meta["hivemind_explore"] = explore_doc
 

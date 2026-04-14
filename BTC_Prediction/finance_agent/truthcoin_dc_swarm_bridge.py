@@ -13,7 +13,7 @@ does **not** add a Swarm vote — it only enriches ``compute_swarm()`` → ``btc
 
 Env:
 
-- ``SYGNIF_SWARM_TRUTHCOIN_DC`` — ``1`` / ``true`` / … to enable (often set with ``SYGNIF_SWARM_BTC_FUTURE=1``).
+- ``SYGNIF_SWARM_TRUTHCOIN_DC`` — ``1`` / ``true`` / … to enable (often set with ``SYGNIF_SWARM_BTC_FUTURE=1`` or ``trade``).
 - ``SYGNIF_TRUTHCOIN_DC_ROOT`` — repo root used as subprocess ``cwd`` (default ``~/truthcoin-dc``).
 - ``SYGNIF_TRUTHCOIN_DC_CLI`` — path to ``truthcoin_dc_app_cli`` (otherwise ``PATH`` or
   ``<TRUTHCOIN_DC_ROOT>/target/debug/truthcoin_dc_app_cli``).

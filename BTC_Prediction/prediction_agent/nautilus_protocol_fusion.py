@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 Fuse **Nautilus research sidecar** (``nautilus_strategy_signal.json``) + **BTC ML JSON**
-(``btc_prediction_output.json``) + optional **btc_future** (Bybit API demo linear position via
-``finance_agent.swarm_knowledge`` when ``SYGNIF_SWARM_BTC_FUTURE=1``) + optional **predict-protocol
+(``btc_prediction_output.json``) + optional **btc_future** / **bf** (Bybit API **demo** linear position when
+``SYGNIF_SWARM_BTC_FUTURE`` is truthy demo mode, or **mainnet** linear position when ``SYGNIF_SWARM_BTC_FUTURE=trade`` —
+via ``finance_agent.swarm_knowledge``) + optional **predict-protocol
 loop tick** + **swarm_keypoints** (annotations from ``swarm_knowledge_output.json`` when present)
 into one **sidecar** for swarm / briefing / dashboards.
 
-``fusion.vote_btc_future`` is the demo-account position vote (**bf**); ``fusion.btc_future_direction``
+``fusion.vote_btc_future`` is the **bf** position vote (demo or trade mode); ``fusion.btc_future_direction``
 is ``long`` / ``short`` / ``flat`` for quick alignment with swarm.orders.
 
 - **Write path:** ``prediction_agent/swarm_nautilus_protocol_sidecar.json`` (override
@@ -81,11 +82,9 @@ def _vote_nautilus_bias(raw: dict[str, Any]) -> tuple[int, str]:
 
 def _btc_future_fusion_vote(repo_root: Path) -> tuple[int, str, dict[str, Any]]:
     """
-    Same **bf** vote as ``swarm_knowledge.compute_swarm`` when ``SYGNIF_SWARM_BTC_FUTURE=1``.
+    Same **bf** vote as ``swarm_knowledge.compute_swarm`` when ``SYGNIF_SWARM_BTC_FUTURE`` is **demo** or **trade**.
     Read-only; no orders.
     """
-    if not _env_truthy("SYGNIF_SWARM_BTC_FUTURE"):
-        return 0, "off", {"enabled": False}
     rs = str(repo_root.resolve())
     if rs not in sys.path:
         sys.path.insert(0, rs)
@@ -94,27 +93,59 @@ def _btc_future_fusion_vote(repo_root: Path) -> tuple[int, str, dict[str, Any]]:
     except ImportError:
         return 0, "swarm_sk_missing", {"enabled": True, "ok": False}
 
+    mode = sk.sygnif_swarm_btc_future_mode()
+    if mode == "off":
+        return 0, "off", {"enabled": False}
+
     sym = os.environ.get("SYGNIF_SWARM_BTC_FUTURE_SYMBOL", "BTCUSDT").strip().upper() or "BTCUSDT"
     try:
         cache_sec = float(os.environ.get("SYGNIF_SWARM_BTC_FUTURE_CACHE_SEC", "60") or 60)
     except ValueError:
         cache_sec = 60.0
-    has_demo = bool(
-        os.environ.get("BYBIT_DEMO_API_KEY", "").strip()
-        and os.environ.get("BYBIT_DEMO_API_SECRET", "").strip()
-    )
-    if not has_demo:
-        return 0, "no_demo_creds", {"enabled": True, "ok": False, "has_demo_keys": False}
+    ttl = max(15.0, cache_sec)
 
-    resp = sk.fetch_demo_linear_position_list(sym, cache_sec=max(15.0, cache_sec))
+    if mode == "demo":
+        has_demo = bool(
+            os.environ.get("BYBIT_DEMO_API_KEY", "").strip()
+            and os.environ.get("BYBIT_DEMO_API_SECRET", "").strip()
+        )
+        if not has_demo:
+            return 0, "no_demo_creds", {"enabled": True, "ok": False, "has_demo_keys": False, "profile": "btc_future"}
+
+        resp = sk.fetch_demo_linear_position_list(sym, cache_sec=ttl)
+        v, d = sk.vote_account_position_from_response(resp)
+        ok = resp is not None and resp.get("retCode") == 0
+        meta: dict[str, Any] = {
+            "enabled": True,
+            "ok": ok,
+            "has_demo_keys": True,
+            "symbol": sym,
+            "profile": "btc_future",
+            "mode": "demo",
+        }
+        snap = sk.linear_position_snapshot_from_response(resp)
+        if snap is not None:
+            meta["position"] = snap
+        return v, d, meta
+
+    has_trade = bool(
+        os.environ.get("BYBIT_API_KEY", "").strip()
+        and os.environ.get("BYBIT_API_SECRET", "").strip()
+    )
+    if not has_trade:
+        return 0, "no_trade_creds", {"enabled": True, "ok": False, "has_trade_keys": False, "profile": "trade"}
+
+    resp = sk.fetch_mainnet_linear_position_list(sym, cache_sec=ttl)
     v, d = sk.vote_account_position_from_response(resp)
     ok = resp is not None and resp.get("retCode") == 0
-    meta: dict[str, Any] = {
+    meta = {
         "enabled": True,
         "ok": ok,
-        "has_demo_keys": True,
+        "has_trade_keys": True,
         "symbol": sym,
-        "profile": "btc_future",
+        "profile": "trade",
+        "mode": "trade",
+        "mainnet": True,
     }
     snap = sk.linear_position_snapshot_from_response(resp)
     if snap is not None:
