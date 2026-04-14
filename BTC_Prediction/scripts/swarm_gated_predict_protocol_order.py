@@ -15,7 +15,8 @@ Flow
 1. ``run_live_fit`` → ``btc_prediction_output.json`` (same stack as ``btc_predict_protocol_loop``).
 2. ``compute_swarm()`` → ``swarm_knowledge_output.json`` (ML/ch/sc/ta + optional **bf**).
 3. ``write_fused_sidecar`` → ``swarm_nautilus_protocol_sidecar.json`` (Nautilus + ML + **btc_future** vote).
-4. **Gates:** ``finance_agent/swarm_order_gate.py`` — Swarm mean / conflict / ``btc_future.ok``; optional fusion label.
+4. **Gates:** ``finance_agent/swarm_order_gate.py`` — Swarm mean / conflict / ``btc_future.ok``; optional fusion label;
+   default **Hivemind** **hm** vote alignment (``SWARM_ORDER_REQUIRE_HIVEMIND_VOTE=1``).
 5. If ``--execute`` + ``SYGNIF_SWARM_PREDICT_ORDER_ACK=YES`` (or ``SYGNIF_PREDICT_PROTOCOL_LOOP_ACK=YES``):
    one ``btc_predict_protocol_loop._iteration`` (opens **Swarm-gated** position on **Bybit demo**).
 
@@ -191,6 +192,8 @@ def main() -> int:
     # Fusion aligner: sum-label (Nautilus+ML+btc_future) + **btc_future** demo vote
     os.environ.setdefault("SWARM_ORDER_REQUIRE_FUSION_ALIGN", "1")
     os.environ.setdefault("SWARM_ORDER_FUSION_ALIGN_BTC_FUTURE", "1")
+    os.environ.setdefault("SWARM_ORDER_REQUIRE_HIVEMIND_VOTE", "1")
+    os.environ.setdefault("SWARM_ORDER_HIVEMIND_VOTE_FLAT_PASS", "1")
     if getattr(args, "no_fusion_align", False):
         os.environ["SWARM_ORDER_REQUIRE_FUSION_ALIGN"] = "0"
 

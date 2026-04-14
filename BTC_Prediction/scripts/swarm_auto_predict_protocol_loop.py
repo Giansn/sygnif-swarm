@@ -9,6 +9,8 @@ Sets operator env so each loop iteration:
   (same as ``swarm_gated_predict_protocol_order.py``)
 - **btc_future governance:** ``SYGNIF_SWARM_BTC_FUTURE_GOVERNANCE=1`` + raw **bf** vote alignment
   (``SWARM_ORDER_REQUIRE_BTC_FUTURE_VOTE``); flat demo allowed if ``SWARM_ORDER_BTC_FUTURE_VOTE_FLAT_PASS=1``
+- **Hivemind entries:** ``SWARM_ORDER_REQUIRE_HIVEMIND_VOTE=1`` (default here) — long needs **hm** ``>= 1``, short ``<= -1``;
+  ``SWARM_ORDER_HIVEMIND_VOTE_FLAT_PASS=1`` allows **hm** ``0`` (quiet liveness). Set ``SWARM_ORDER_REQUIRE_HIVEMIND_VOTE=0`` to skip.
 - **~USDT take-profit** after open: ``SYGNIF_SWARM_TP_USDT_TARGET`` (default **50** for a **$50** TP distance target)
 
 **letscrash / BTC-0.1 first:** ``decide_side`` already applies **R01** bearish stack from
@@ -176,6 +178,8 @@ def main() -> int:
     os.environ.setdefault("SWARM_ORDER_FUSION_ALIGN_BTC_FUTURE", "1")
     os.environ.setdefault("SWARM_ORDER_REQUIRE_BTC_FUTURE_VOTE", "1")
     os.environ.setdefault("SWARM_ORDER_BTC_FUTURE_VOTE_FLAT_PASS", "1")
+    os.environ.setdefault("SWARM_ORDER_REQUIRE_HIVEMIND_VOTE", "1")
+    os.environ.setdefault("SWARM_ORDER_HIVEMIND_VOTE_FLAT_PASS", "1")
     if not args.no_tp_target:
         os.environ.setdefault("SYGNIF_SWARM_TP_USDT_TARGET", "50")
 

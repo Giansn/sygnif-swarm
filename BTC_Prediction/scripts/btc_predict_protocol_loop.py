@@ -28,6 +28,8 @@ the ASAP script, optimised for **closed-loop** automation.
   follow ``decide_side``. Set ``SYGNIF_SWARM_BTC_FUTURE=1`` (demo **bf**) or ``trade`` (mainnet **bf**); with **ac** on and
   matching symbols, Swarm uses one fused **bf** vote. Default ``1`` when gate is on. See
   ``scripts/swarm_auto_predict_protocol_loop.py``.
+- **Hivemind gate (optional):** ``SWARM_ORDER_REQUIRE_HIVEMIND_VOTE=1`` requires **hm** vote to align with long/short;
+  ``SWARM_ORDER_HIVEMIND_VOTE_FLAT_PASS=1`` allows **hm** ``0``. Swarm-auto defaults both **on**; override to ``0`` to disable.
 - ``SYGNIF_SWARM_TP_USDT_TARGET`` — optional (e.g. ``50``): after a successful **open**, set a take-profit
   on the linear leg so that **approx.** ``qty * |TP - entry| ≈`` this USDT (Bybit demo REST).
 - ``SYGNIF_SWARM_AUTO_TRADING`` — marker env set by the auto launcher (for operators / dashboards only).
@@ -273,6 +275,7 @@ def _iteration(
     entry_blocked = False
     swarm_gate_ok: bool | None = None
     swarm_reason = ""
+    swarm_snapshot: dict | None = None
     if execute and _env_truthy_swarm("SYGNIF_SWARM_GATE_LOOP"):
         os.environ.setdefault("SYGNIF_SWARM_BTC_FUTURE", "1")
         try:
@@ -285,6 +288,7 @@ def _iteration(
         except ImportError:
             from finance_agent.swarm_order_gate import swarm_fusion_allows  # noqa: PLC0415
         swarm = compute_swarm()
+        swarm_snapshot = swarm
         fusion_doc = write_fused_sidecar(_REPO)
         swarm_gate_ok, swarm_reason = swarm_fusion_allows(
             target=target,
@@ -360,6 +364,15 @@ def _iteration(
         line["swarm_reason"] = swarm_reason
         line["entry_blocked"] = entry_blocked
         line["open_target_side"] = open_target
+        if swarm_snapshot:
+            _src = swarm_snapshot.get("sources") if isinstance(swarm_snapshot.get("sources"), dict) else {}
+            _hm = _src.get("hm") if isinstance(_src.get("hm"), dict) else {}
+            if _hm:
+                line["hm_vote"] = _hm.get("vote")
+                line["hm_detail"] = _hm.get("detail")
+            sce = swarm_snapshot.get("swarm_core_engine")
+            if sce is not None:
+                line["swarm_core_engine"] = sce
     if mn_arg is not None:
         line["manual_notional_usdt"] = float(mn_arg)
     if planned_qty_from_notional is not None:
