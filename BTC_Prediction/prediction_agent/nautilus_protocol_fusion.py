@@ -154,7 +154,7 @@ def _btc_future_fusion_vote(repo_root: Path) -> tuple[int, str, dict[str, Any]]:
 
 
 def _btc_future_direction(v: int) -> str:
-    """Semantic direction from demo linear position vote (same as swarm ``bf``)."""
+    """Semantic direction from linear position vote (same as swarm ``bf``)."""
     if v >= 1:
         return "long"
     if v <= -1:
