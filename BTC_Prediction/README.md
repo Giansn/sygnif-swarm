@@ -26,3 +26,5 @@ python3 scripts/btc_predict_protocol_loop.py --help
 ```
 
 Docker bridge: create `sygnif_network` once; merge `network/docker-compose.sygnif-network.yml` with your compose file.
+
+**Disaster recovery** (secrets, systemd, smoke tests): see the root [`README.md`](../README.md#disaster-recovery-github--off-repo-backup).
