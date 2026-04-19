@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "symbols": {
+    "BTCUSDT": {
+      "consec_open_fails": 40,
+      "last_open_fail_unix": 1776490983.944619,
+      "last_open_iter": 153,
+      "last_open_success_unix": 1776475561.4382281
+    }
+  }
+}

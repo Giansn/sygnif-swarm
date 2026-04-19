@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "updated_utc": "2026-04-19T21:00:56.273564+00:00",
+  "last_swarm": {
+    "swarm_mean": 1.0,
+    "swarm_label": "SWARM_BULL",
+    "swarm_conflict": false,
+    "sources_n": 7,
+    "missing_files": []
+  },
+  "vote_digest": {
+    "ml": {
+      "vote": 0,
+      "detail": "MIXED"
+    },
+    "ch": {
+      "vote": 0,
+      "detail": "flat48/52"
+    },
+    "sc": {
+      "vote": -1,
+      "detail": "short"
+    },
+    "ta": {
+      "vote": -1,
+      "detail": "s30"
+    },
+    "bf": {
+      "vote": 0,
+      "detail": "flat"
+    },
+    "hm": {
+      "vote": 1,
+      "detail": "hivemind_active_slots_voting=0_markets_trading=0"
+    },
+    "es": {
+      "vote": 0,
+      "detail": "<urlopen error [Errno -2] Name or service not known>"
+    }
+  },
+  "last_hints": [
+    "label_change:None\u2192SWARM_BULL",
+    "source_shift:ch"
+  ],
+  "history_path": "/home/ubuntu/SYGNIF/prediction_agent/swarm_auto_improvement_history.jsonl",
+  "weak_points": {
+    "generated_utc": "2026-04-19T21:00:56Z",
+    "swarm_live_ok": true,
+    "swarm_label": "SWARM_BULL",
+    "gate_ok_rate": 0.3725,
+    "target_side_counts": {
+      "long": 289,
+      "short": 111
+    },
+    "last_row": {
+      "iter": 2,
+      "ts_utc": "2026-04-19T20:58:38Z",
+      "target_side": "long",
+      "swarm_gate_ok": false,
+      "swarm_reason": "nautilus_contra_long vote_nautilus=-1",
+      "open_target_side": null
+    },
+    "closed_tail": {
+      "n": 50,
+      "wins": 2,
+      "losses": 48,
+      "sum": -3532.1255,
+      "avg": -70.6425,
+      "best": 45.7886,
+      "worst": -224.405
+    },
+    "top_block": {
+      "reason": "nautilus_contra_long vote_nautilus=-1",
+      "n": 140
+    },
+    "recommendation_ids": [
+      "nautilus_model_tension",
+      "venue_churn",
+      "consec_open_fails",
+      "neurolinked_summary_unreachable"
+    ]
+  }
+}

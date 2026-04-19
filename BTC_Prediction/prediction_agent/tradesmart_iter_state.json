@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "iteration": 2,
+  "generation": 0,
+  "interval_sec": 2.0,
+  "quantity": 1,
+  "consecutive_errors": 0,
+  "successful_closes": 0,
+  "last_netqty": 0,
+  "last_mtm": 0.0,
+  "last_action": "open_buy",
+  "last_note": "flat→open_buy pulse",
+  "history_tail": [
+    {
+      "iter": 1,
+      "action": "open_buy",
+      "ok": true,
+      "err": "",
+      "netqty": 0,
+      "mtm": 0.0,
+      "interval_next": 2.0,
+      "gen": 0
+    },
+    {
+      "iter": 2,
+      "action": "open_buy",
+      "ok": true,
+      "err": "",
+      "netqty": 0,
+      "mtm": 0.0,
+      "interval_next": 2.0,
+      "gen": 0
+    }
+  ]
+}

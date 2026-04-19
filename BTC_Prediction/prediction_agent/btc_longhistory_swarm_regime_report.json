@@ -1,0 +1,49 @@
+{
+  "generated_utc": "2026-04-15T00:41:40Z",
+  "disclaimer": "Regime statistics are descriptive only. Hivemind vote reflects Truthcoin liveness/heuristic, not a fitted model on full Bitcoin history.",
+  "data": {
+    "path": "/home/ubuntu/SYGNIF/finance_agent/btc_specialist/data/btc_daily_ohlcv_long.json",
+    "n_candles": 120,
+    "first_date": "2025-12-14",
+    "last_date": "2026-04-12",
+    "span_days": 119
+  },
+  "whole_sample": {
+    "n_daily_returns": 119,
+    "pct_up_days": 47.0588,
+    "mean_log_return_daily": -0.0018379,
+    "stdev_log_return_daily": 0.02801969,
+    "annualized_vol_log_approx": 0.535315
+  },
+  "by_halving_era": {
+    "after_4th_halving": {
+      "n_daily_returns": 119,
+      "pct_up_days": 47.0588,
+      "mean_log_return_daily": -0.0018379,
+      "stdev_log_return_daily": 0.02801969,
+      "annualized_vol_log_approx": 0.535315,
+      "n_days": 120
+    }
+  },
+  "algorithms_used": [
+    "daily_log_return = ln(close_t / close_{t-1})",
+    "pct_up_days = fraction(log_return > 0)",
+    "annualized_vol_approx = stdev(daily_log_returns) * sqrt(365)",
+    "era_label = coarse bucket vs known halving calendar dates",
+    "swarm = finance_agent.swarm_knowledge.compute_swarm()"
+  ],
+  "swarm_hivemind_snapshot": {
+    "ok": true,
+    "swarm_mean": -0.25,
+    "swarm_label": "SWARM_MIXED",
+    "swarm_conflict": true,
+    "swarm_core_engine": null,
+    "swarm_engine": "python",
+    "swarm_engine_detail": "python_mean",
+    "sources_n": 4,
+    "hm_vote": null,
+    "hm_detail": null,
+    "hivemind_explore_ok": null,
+    "hivemind_explore_slots_voting_n": null
+  }
+}

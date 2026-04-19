@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "contract": "read_only_no_orders",
+    "repo": "/home/ubuntu/SYGNIF",
+    "started_utc": "2026-04-15T03:53:45Z"
+  },
+  "last_train": null,
+  "iteration": 1,
+  "latest": {
+    "loop_utc": "2026-04-15T03:53:45Z",
+    "swarm_mean": -0.25,
+    "swarm_label": "SWARM_MIXED",
+    "swarm_conflict": true,
+    "swarm_engine": "python",
+    "swarm_engine_detail": "python_mean",
+    "sources_n": 4,
+    "missing_files": [],
+    "sources_compact": {
+      "ml": "MIXED",
+      "ch": "dn82",
+      "sc": "long",
+      "ta": "s30"
+    }
+  },
+  "swarm_full": {
+    "generated_utc": "2026-04-15T03:53:45Z",
+    "swarm_mean": -0.25,
+    "swarm_label": "SWARM_MIXED",
+    "swarm_conflict": true,
+    "swarm_engine": "python",
+    "swarm_engine_detail": "python_mean",
+    "sources": {
+      "ml": {
+        "vote": 0,
+        "detail": "MIXED"
+      },
+      "ch": {
+        "vote": -1,
+        "detail": "dn82"
+      },
+      "sc": {
+        "vote": 1,
+        "detail": "long"
+      },
+      "ta": {
+        "vote": -1,
+        "detail": "s30"
+      }
+    },
+    "sources_n": 4,
+    "missing_files": [],
+    "ethereum_swarm_bee": {
+      "enabled": true,
+      "ok": false,
+      "detail": "bee_prefetch:ModuleNotFoundError(\"No module named 'finance_agent'\")"
+    },
+    "open_trades": {
+      "enabled": true,
+      "source": "bybit",
+      "ok": false,
+      "reason": "no_bybit_signed_creds",
+      "open_n": 0,
+      "trades": [],
+      "bybit_venue": "demo"
+    },
+    "bybit_open_pnl": {
+      "enabled": true,
+      "venues": {
+        "demo": {
+          "venue": "demo",
+          "skipped": true,
+          "reason": "SYGNIF_SWARM_BTC_FUTURE_off"
+        },
+        "mainnet": {
+          "venue": "mainnet",
+          "skipped": true,
+          "reason": "signed_mainnet_position_off"
+        }
+      }
+    }
+  }
+}

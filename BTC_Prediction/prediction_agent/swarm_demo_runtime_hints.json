@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "generated_utc": "2026-04-19T21:00:59Z",
+  "expires_utc": "2026-04-19T23:00:59Z",
+  "source": "swarm_improvement_runtime.build_demo_runtime_hints",
+  "triggered_by": [
+    "venue_churn",
+    "nautilus_model_tension",
+    "consec_open_fails"
+  ],
+  "env_apply": {
+    "SYGNIF_PREDICT_OPEN_IMMEDIATE": "0",
+    "SYGNIF_SWARM_LOOP_INTERVAL_SEC": "120",
+    "SWARM_BYBIT_ENTRY_COOLDOWN_SEC": "240",
+    "SYGNIF_PREDICT_MIN_DISCRETIONARY_CLOSE_SEC": "60",
+    "PREDICT_LOOP_REFRESH_ALIGNED_EVERY_N": "2",
+    "SYGNIF_PREDICT_DEFAULT_NOTIONAL_USDT": "80000",
+    "SWARM_ORDER_REQUIRE_NAUTILUS_NOT_CONTRARY": "0",
+    "SWARM_ORDER_NAUTILUS_MAX_AGE_MIN": "12",
+    "SWARM_BYBIT_MAX_CONSEC_OPEN_FAILS": "40",
+    "SWARM_ORDER_REQUIRE_FUSION_ALIGN": "0"
+  },
+  "notes": [
+    "venue_churn: paced opens, longer loop interval, cooldown, discretionary close wall, lower notional",
+    "nautilus_model_tension: not_contrary off + max sidecar age 12m",
+    "consec_open_fails: higher consec cap + longer entry cooldown",
+    "nautilus_model_tension: SWARM_ORDER_REQUIRE_FUSION_ALIGN=0"
+  ]
+}
