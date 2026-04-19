@@ -19,6 +19,10 @@ python3 scripts/btc_predict_protocol_loop.py
 
 Live trading still needs `SYGNIF_PREDICT_PROTOCOL_LOOP_ACK=YES`, valid `BYBIT_DEMO_*`, and `--execute` on the loop scripts.
 
+## NeuroLinked (optional)
+
+The bundle includes **NeuroLinked** (`BTC_Prediction/third_party/neurolinked/`), the **Bybit market → NeuroLinked** script (`BTC_Prediction/scripts/bybit_nl_market_feed.py`), and **systemd templates** under `BTC_Prediction/deploy/systemd/`. Install and tuning: [`BTC_Prediction/docs/NEUROLINKED_SYSTEMD.md`](BTC_Prediction/docs/NEUROLINKED_SYSTEMD.md).
+
 ## Docker network
 
 `BTC_Prediction/network/docker-compose.sygnif-network.yml` — external network `sygnif_network` (override with `SYGNIF_EXTERNAL_NETWORK_NAME`).

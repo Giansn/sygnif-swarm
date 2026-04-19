@@ -17,3 +17,6 @@ BTC_Prediction/prediction_agent/swarm_knowledge_output.json
 BTC_Prediction/prediction_agent/swarm_nautilus_protocol_sidecar.json
 BTC_Prediction/prediction_agent/swarm_knowledge_sealed.json
 BTC_Prediction/finance_agent/**/*.log
+
+# NeuroLinked runtime state (large; never commit)
+BTC_Prediction/third_party/neurolinked/brain_state/

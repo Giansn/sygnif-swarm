@@ -7,3 +7,6 @@ requests>=2.32.0
 pybit>=5.15.0
 pytest>=8.3.0
 cryptography>=42.0.0
+
+# NeuroLinked dashboard + HTTP API (optional; see BTC_Prediction/docs/NEUROLINKED_SYSTEMD.md)
+-r BTC_Prediction/third_party/neurolinked/requirements.txt
