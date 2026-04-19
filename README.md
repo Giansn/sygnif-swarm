@@ -21,7 +21,7 @@ Live trading still needs `SYGNIF_PREDICT_PROTOCOL_LOOP_ACK=YES`, valid `BYBIT_DE
 
 ## NeuroLinked (optional)
 
-The bundle includes **NeuroLinked** (`BTC_Prediction/third_party/neurolinked/`), the **Bybit market → NeuroLinked** script (`BTC_Prediction/scripts/bybit_nl_market_feed.py`), and **systemd templates** under `BTC_Prediction/deploy/systemd/`. Install and tuning: [`BTC_Prediction/docs/NEUROLINKED_SYSTEMD.md`](BTC_Prediction/docs/NEUROLINKED_SYSTEMD.md).
+The bundle includes **NeuroLinked** (`BTC_Prediction/third_party/neurolinked/`), the **Bybit market → NeuroLinked** script (`BTC_Prediction/scripts/bybit_nl_market_feed.py`), and **systemd unit templates** (`BTC_Prediction/deploy/systemd/*.service.in`). Install for **any clone path** with **`BTC_Prediction/deploy/install_systemd_units.sh`** (see [`BTC_Prediction/docs/NEUROLINKED_SYSTEMD.md`](BTC_Prediction/docs/NEUROLINKED_SYSTEMD.md)).
 
 ## Docker network
 

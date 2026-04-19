@@ -4,9 +4,9 @@ This bundle ships **NeuroLinked** under `third_party/neurolinked/` (dashboard + 
 
 ## Layout
 
-- Clone this repository as `~/sygnif-swarm` (or edit the unit files: they use `%h/sygnif-swarm/...`).
-- Python venv at **`~/sygnif-swarm/.venv`** (repo root), with `pip install -r requirements.txt` from the clone root.
-- Code + env live in **`~/sygnif-swarm/BTC_Prediction/`** (`SYGNIF_REPO_ROOT` in `tools/env.sh`).
+- Clone this repository to **any path** (e.g. `~/sygnif-swarm`, `/opt/sygnif-swarm`). The **bundle root** is the directory that **contains** `BTC_Prediction/`.
+- Python venv at **`<bundle>/.venv`** (recommended), with `pip install -r requirements.txt` from the clone root.
+- Code + env live in **`<bundle>/BTC_Prediction/`** (`SYGNIF_REPO_ROOT` in `tools/env.sh`).
 
 ## Env files
 
@@ -23,11 +23,35 @@ Useful knobs (see examples for full list):
 - **`SYGNIF_NEUROLINKED_SIM_TARGET_HZ`** — lower simulation Hz if the HTTP stack stalls (GIL / uvicorn).
 - **`SYGNIF_NEUROLINKED_MAX_CONCURRENT_BRAIN_IO`** — cap concurrent `asyncio.to_thread` brain ingest.
 
-## Install systemd units
+## Install systemd units (any clone path)
+
+Templates live in `deploy/systemd/*.service.in` (placeholders `@@BUNDLE_ROOT@@`, `@@PYTHON@@`, `@@SERVICE_USER@@`, `@@SERVICE_GROUP@@`).
+
+From the repo:
 
 ```bash
-sudo cp ~/sygnif-swarm/BTC_Prediction/deploy/systemd/*.service /etc/systemd/system/
-sudo systemctl daemon-reload
+chmod +x BTC_Prediction/deploy/install_systemd_units.sh
+# Auto-detect bundle root = parent of BTC_Prediction (run from anywhere):
+sudo BTC_Prediction/deploy/install_systemd_units.sh
+# Or pass absolute bundle root and optional Python:
+sudo BTC_Prediction/deploy/install_systemd_units.sh /opt/myswarm
+sudo BTC_Prediction/deploy/install_systemd_units.sh /opt/myswarm /opt/myswarm/.venv/bin/python3
+```
+
+Dry-run (inspect generated units):
+
+```bash
+BTC_Prediction/deploy/install_systemd_units.sh --dry-run /tmp/units /opt/myswarm
+ls -la /tmp/units
+```
+
+Optional environment for the installer:
+
+- **`SERVICE_USER`** / **`SERVICE_GROUP`** — systemd `User=` / `Group=` (default `ubuntu`).
+
+Then:
+
+```bash
 sudo systemctl enable --now sygnif-neurolinked sygnif-bybit-nl-feed sygnif-swarm-predict-loop
 ```
 

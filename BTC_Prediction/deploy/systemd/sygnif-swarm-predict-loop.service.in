@@ -8,13 +8,13 @@ StartLimitBurst=3
 
 [Service]
 Type=simple
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=%h/sygnif-swarm/BTC_Prediction
-EnvironmentFile=-%h/sygnif-swarm/BTC_Prediction/.env
-EnvironmentFile=-%h/sygnif-swarm/BTC_Prediction/swarm_operator.env
+User=@@SERVICE_USER@@
+Group=@@SERVICE_GROUP@@
+WorkingDirectory=@@BUNDLE_ROOT@@/BTC_Prediction
+EnvironmentFile=-@@BUNDLE_ROOT@@/BTC_Prediction/.env
+EnvironmentFile=-@@BUNDLE_ROOT@@/BTC_Prediction/swarm_operator.env
 Environment=SYGNIF_SWARM_RUNTIME_HINTS_APPLY=1
-ExecStart=/bin/bash %h/sygnif-swarm/BTC_Prediction/scripts/sygnif_swarm_predict_loop_locked.sh
+ExecStart=/bin/bash @@BUNDLE_ROOT@@/BTC_Prediction/scripts/sygnif_swarm_predict_loop_locked.sh
 Restart=on-failure
 RestartSec=45
 StandardOutput=journal

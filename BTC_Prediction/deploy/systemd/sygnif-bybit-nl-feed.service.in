@@ -5,14 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=%h/sygnif-swarm/BTC_Prediction
-EnvironmentFile=-%h/sygnif-swarm/BTC_Prediction/.env
-EnvironmentFile=-%h/sygnif-swarm/BTC_Prediction/swarm_operator.env
+User=@@SERVICE_USER@@
+Group=@@SERVICE_GROUP@@
+WorkingDirectory=@@BUNDLE_ROOT@@/BTC_Prediction
+EnvironmentFile=-@@BUNDLE_ROOT@@/BTC_Prediction/.env
+EnvironmentFile=-@@BUNDLE_ROOT@@/BTC_Prediction/swarm_operator.env
 Environment=SYGNIF_SWARM_BYBIT_MAINNET=1
 Environment=BYBIT_NL_INCLUDE_SWARM=1
-ExecStart=%h/sygnif-swarm/.venv/bin/python3 %h/sygnif-swarm/BTC_Prediction/scripts/bybit_nl_market_feed.py
+ExecStart=@@PYTHON@@ @@BUNDLE_ROOT@@/BTC_Prediction/scripts/bybit_nl_market_feed.py
 Restart=on-failure
 RestartSec=10
 

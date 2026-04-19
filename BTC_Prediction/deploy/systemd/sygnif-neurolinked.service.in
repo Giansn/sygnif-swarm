@@ -1,0 +1,21 @@
+[Unit]
+Description=NeuroLinked neuromorphic brain dashboard (sygnif-swarm bundle)
+Documentation=https://github.com/Giansn/sygnif-swarm
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@@SERVICE_USER@@
+Group=@@SERVICE_GROUP@@
+WorkingDirectory=@@BUNDLE_ROOT@@/BTC_Prediction/third_party/neurolinked
+EnvironmentFile=-@@BUNDLE_ROOT@@/BTC_Prediction/.env
+EnvironmentFile=-@@BUNDLE_ROOT@@/BTC_Prediction/neurolinked.service.env
+Environment=SYGNIF_NEUROLINKED_BYBIT_SIGNED_READ=mainnet
+ExecStart=@@PYTHON@@ @@BUNDLE_ROOT@@/BTC_Prediction/third_party/neurolinked/run.py --host 0.0.0.0 --port 8889 --neurons 3000
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=25
+
+[Install]
+WantedBy=multi-user.target

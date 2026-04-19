@@ -9,7 +9,7 @@ Portable slice: **5m live fit**, **Bybit demo** hooks, **Swarm / Truthcoin Hivem
 | `finance_agent/` | Swarm knowledge, gates, Truthcoin bridge, **NeuroLinked predict-loop hook** |
 | `trade_overseer/` | Bybit linear REST |
 | `third_party/neurolinked/` | **NeuroLinked** brain UI + HTTP ingest (`run.py`, port **8889**) |
-| `deploy/systemd/` | Unit templates: predict loop, NeuroLinked, Bybit NL feed |
+| `deploy/systemd/*.service.in` | systemd templates; use `deploy/install_systemd_units.sh` |
 | `docs/NEUROLINKED_SYSTEMD.md` | NeuroLinked + systemd + env tuning |
 | `letscrash/` | R01 registry JSON |
 | `network/` | Docker external bridge overlay |
