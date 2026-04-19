@@ -251,6 +251,87 @@ def create_market_order(
     return _post("/v5/order/create", body)
 
 
+def linear_mark_and_last_price(symbol: str) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Public GET /v5/market/tickers — USDT linear ``markPrice`` and ``lastPrice``.
+
+    Uses the same REST host as ``signed_trading_rest_base()`` (demo vs mainnet).
+    """
+    sym = (symbol or "").replace("/", "").upper().strip()
+    if not sym:
+        return None, None
+    base = signed_trading_rest_base().rstrip("/")
+    params: Dict[str, str] = {"category": "linear", "symbol": sym}
+    query_string = urllib.parse.urlencode(sorted(params.items()))
+    url = f"{base}/v5/market/tickers?{query_string}"
+    try:
+        r = requests.get(url, timeout=15)
+        j = r.json()
+    except Exception:
+        return None, None
+    if j.get("retCode") != 0:
+        return None, None
+    lst = (j.get("result") or {}).get("list") or []
+    if not lst or not isinstance(lst[0], dict):
+        return None, None
+    row = lst[0]
+
+    def _px(key: str) -> Optional[float]:
+        raw = row.get(key)
+        if raw is None or str(raw).strip() == "":
+            return None
+        try:
+            v = float(raw)
+        except (TypeError, ValueError):
+            return None
+        return v if v > 0 else None
+
+    return _px("markPrice"), _px("lastPrice")
+
+
+def create_limit_order(
+    symbol: str,
+    side: str,
+    qty: str,
+    position_idx: int,
+    price: str,
+    *,
+    time_in_force: str = "PostOnly",
+    reduce_only: bool = False,
+    order_link_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    POST /v5/order/create — Limit order on linear USDT (e.g. ``PostOnly`` maker rest below/above mark).
+    """
+    sym = (symbol or "").replace("/", "").upper().strip()
+    s = (side or "").strip().capitalize()
+    if not sym or s not in ("Buy", "Sell"):
+        return {"retCode": -1, "retMsg": "symbol and side Buy|Sell required"}
+    if position_idx not in (0, 1, 2):
+        return {"retCode": -1, "retMsg": "positionIdx must be 0, 1, or 2"}
+    px = str(price).strip()
+    if not px:
+        return {"retCode": -1, "retMsg": "price required"}
+    tif = (time_in_force or "PostOnly").strip()
+    body: Dict[str, Any] = {
+        "category": "linear",
+        "symbol": sym,
+        "side": s,
+        "orderType": "Limit",
+        "qty": str(qty).strip(),
+        "price": px,
+        "timeInForce": tif,
+        "positionIdx": position_idx,
+    }
+    if reduce_only:
+        body["reduceOnly"] = True
+    if order_link_id:
+        ol = str(order_link_id).strip()
+        if ol:
+            body["orderLinkId"] = ol
+    return _post("/v5/order/create", body)
+
+
 def position_list(
     symbol: str,
     *,

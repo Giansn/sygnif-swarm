@@ -41,15 +41,22 @@ def position_meta_path() -> Path:
     return _REPO / "prediction_agent" / "btc_iface_position_tags.json"
 
 
+def _order_link_entropy_suffix() -> str:
+    """Short suffix so repeated ``iter_n`` (e.g. one-shot gate always ``1``) does not reuse Bybit ``orderLinkId``."""
+    return f"{int(time.time() * 1000) & 0xFFFF:04x}{random.randint(0, 0xFFF):03x}"
+
+
 def order_link_open(iter_n: int, side_long: bool) -> str:
-    """Bybit ``orderLinkId`` (keep short; must be unique per order)."""
+    """Bybit ``orderLinkId`` (≤36 chars; unique per call — Bybit rejects duplicate link ids)."""
     n = int(iter_n) % 1_000_000
-    return f"sygPL{n:06d}O{'L' if side_long else 'S'}"
+    suf = _order_link_entropy_suffix()
+    return f"sygPL{n:06d}{suf}{'L' if side_long else 'S'}"
 
 
 def order_link_close(iter_n: int) -> str:
     n = int(iter_n) % 1_000_000
-    return f"sygPL{n:06d}CX"
+    suf = _order_link_entropy_suffix()
+    return f"sygPL{n:06d}{suf}CX"
 
 
 def order_link_verify_open() -> str:

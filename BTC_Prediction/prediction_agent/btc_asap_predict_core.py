@@ -1,6 +1,27 @@
 """
 Shared **live 5m predict + sizing** helpers for ``btc_predict_asap_order`` and
 ``btc_predict_protocol_loop`` (Bybit demo REST paths).
+
+**Modeled “profit” / edge (research only, not P/L guarantees):**
+
+- ``consensus_mid_and_close`` — blend of RF/XGB ``next_mean`` vs ``current_close``.
+- ``modeled_edge_usdt_per_btc`` — favorable USDT move per 1 BTC at that mid vs close (long vs short).
+- ``modeled_profit_usdt_at_qty`` — ``edge_per_btc * qty`` (same linear scale as the open-edge gate).
+- ``min_predict_edge_profit_usdt`` + gate in ``btc_predict_protocol_loop`` — skip flat opens when modeled
+  USDT edge is below floor (fees/slippage not modeled).
+- ``relative_modeled_edge_pct`` — favorable move as %% of spot close (telemetry / risk context).
+- ``per_trade_fee_usdt`` / ``open_modeled_edge_floor_usdt`` — ``SYGNIF_PREDICT_PER_TRADE_COST_USDT`` (default **1**)
+  plus optional ``SYGNIF_PREDICT_EDGE_PLUS_FEE`` (default on) added to ``min_predict_edge_profit_usdt()`` for flat opens.
+- ``effective_open_edge_floor_usdt(move_pct)`` — optional **vol relax**: when RF/XGB mean ``move_pct`` is high, scales the
+  modeled-edge floor down (``SYGNIF_PREDICT_EDGE_VOL_RELAX`` and ``SYGNIF_PREDICT_EDGE_VOL_*`` knobs).
+- ``linear_leg_unrealised_usdt`` — parse ``unrealisedPnl`` for the venue leg (``positionIdx`` when hedge).
+- **Heavy91 failure swing (Pine-style):** ``run_live_fit`` attaches ``predictions.failure_swing_heavy91`` from
+  the same 5m OHLC tape. ``SYGNIF_PREDICT_FAILURE_SWING_HEAVY91_ENTRIES`` — when on, ``decide_side`` may emit
+  long/short from that counter-break logic after the ML stack. Tunables: ``SYGNIF_FS_HEAVY91_PERIOD`` (default **84**),
+  ``SYGNIF_FS_HEAVY91_EMA`` (**120**), ``SYGNIF_FS_HEAVY91_VOL_THRESHOLD`` (**5** = 5%% distance open vs EMA).
+- **Panic → reverse (predict loop):** ``SYGNIF_PREDICT_FAILURE_SWING_PANIC_REVERSE`` — when ML target is ``None``
+  (would flatten if ``hold_on_no_edge`` is off) but Heavy91 signals a counter-trade, set target to flip instead
+  of cashing out; Swarm gate is re-evaluated when enabled.
 """
 
 from __future__ import annotations
@@ -54,6 +75,179 @@ def parse_usdt_available(resp: dict[str, Any]) -> float | None:
         except (TypeError, ValueError):
             return None
     return None
+
+
+def parse_usdt_equity(resp: dict[str, Any]) -> float | None:
+    """Best-effort USDT **equity** from Bybit ``wallet-balance`` (UNIFIED) coin row."""
+    if resp.get("retCode") != 0:
+        return None
+    lst = (resp.get("result") or {}).get("list") or []
+    if not lst:
+        return None
+    coins = lst[0].get("coin") or []
+    for c in coins:
+        if str(c.get("coin", "")).upper() != "USDT":
+            continue
+        for key in ("equity", "totalEquity", "usdValue"):
+            raw = c.get(key)
+            if raw is not None and str(raw).strip() != "":
+                try:
+                    return float(raw)
+                except (TypeError, ValueError):
+                    pass
+    return None
+
+
+def consensus_mid_and_close(out: dict[str, Any]) -> tuple[float, float]:
+    """Return ``(mid_next_mean, current_close)`` from RF/XGB tree predictions (same blend as TP/SL helpers)."""
+    close = 0.0
+    try:
+        close = float(out.get("current_close") or 0.0)
+    except (TypeError, ValueError):
+        pass
+    pr = out.get("predictions") if isinstance(out.get("predictions"), dict) else {}
+    rf = pr.get("random_forest") if isinstance(pr.get("random_forest"), dict) else {}
+    xg = pr.get("xgboost") if isinstance(pr.get("xgboost"), dict) else {}
+    try:
+        rf_m = float(rf.get("next_mean") or 0.0)
+    except (TypeError, ValueError):
+        rf_m = 0.0
+    try:
+        xg_m = float(xg.get("next_mean") or 0.0)
+    except (TypeError, ValueError):
+        xg_m = 0.0
+    if rf_m > 0 and xg_m > 0:
+        mid = (rf_m + xg_m) / 2.0
+    elif rf_m > 0:
+        mid = rf_m
+    elif xg_m > 0:
+        mid = xg_m
+    else:
+        mid = close
+    return mid, close
+
+
+def modeled_edge_usdt_per_btc(out: dict[str, Any], side: str) -> float:
+    """
+    Rough favorable USDT price move per **1 BTC** notional at consensus ``next_mean`` vs ``current_close``.
+
+    Long: ``max(0, mid - close)``; short: ``max(0, close - mid)``. Linear BTCUSDT approximation; no fees.
+    """
+    mid, cl = consensus_mid_and_close(out)
+    if cl <= 0:
+        return 0.0
+    s = (side or "").strip().lower()
+    if s == "long":
+        return max(0.0, mid - cl)
+    if s == "short":
+        return max(0.0, cl - mid)
+    return 0.0
+
+
+def per_trade_fee_usdt() -> float:
+    """
+    Assumed **round-trip** venue cost per full open+close in USDT (spread/fees/taker model).
+
+    Used only for gates / hold-until-profit defaults — not fetched from the exchange.
+    """
+    return max(0.0, env_float("SYGNIF_PREDICT_PER_TRADE_COST_USDT", 1.0))
+
+
+def _edge_gate_includes_fee() -> bool:
+    raw = (os.environ.get("SYGNIF_PREDICT_EDGE_PLUS_FEE") or "1").strip().lower()
+    return raw not in ("0", "false", "no", "off")
+
+
+def open_modeled_edge_floor_usdt() -> float:
+    """
+    Minimum **modeled** favorable USDT P/L required before a flat **open**.
+
+    ``min_predict_edge_profit_usdt()`` plus ``per_trade_fee_usdt()`` when
+    ``SYGNIF_PREDICT_EDGE_PLUS_FEE`` is on (default), so a $1/trade assumption is
+    not eaten by the fee model.
+    """
+    base = min_predict_edge_profit_usdt()
+    if _edge_gate_includes_fee():
+        return base + per_trade_fee_usdt()
+    return base
+
+
+def effective_open_edge_floor_usdt(move_pct: float) -> float:
+    """
+    Modeled-edge **floor** for flat opens, optionally reduced when predicted move
+    (``move_pct`` from ``move_pct_and_close``, %% of close) is high — vol proxy for
+    “larger implied next-bar move → relax min edge”.
+
+    Off when ``SYGNIF_PREDICT_EDGE_VOL_RELAX`` is ``0``/``false`` or when base floor is ``0``.
+    """
+    base = open_modeled_edge_floor_usdt()
+    if base <= 0.0:
+        return 0.0
+    raw = (os.environ.get("SYGNIF_PREDICT_EDGE_VOL_RELAX") or "1").strip().lower()
+    if raw in ("0", "false", "no", "off", ""):
+        return base
+    lo = max(0.0, env_float("SYGNIF_PREDICT_EDGE_VOL_REF_LO_PCT", 0.05))
+    hi = max(lo + 1e-6, env_float("SYGNIF_PREDICT_EDGE_VOL_REF_HI_PCT", 0.35))
+    max_relax = max(0.0, min(0.95, env_float("SYGNIF_PREDICT_EDGE_VOL_RELAX_MAX", 0.5)))
+    min_scale = max(0.05, min(1.0, env_float("SYGNIF_PREDICT_EDGE_VOL_RELAX_MIN_FACTOR", 0.25)))
+    try:
+        m = float(move_pct)
+    except (TypeError, ValueError):
+        m = 0.0
+    t = (m - lo) / (hi - lo)
+    if t <= 0.0:
+        return base
+    t = min(1.0, t)
+    factor = max(min_scale, 1.0 - max_relax * t)
+    return base * factor
+
+
+def min_predict_edge_profit_usdt() -> float:
+    """
+    Minimum modeled edge (USDT) required before a **flat** market open.
+
+    - If ``SYGNIF_PREDICT_MIN_EDGE_PROFIT_USDT`` is set in the environment (any value, including ``0``),
+      that numeric value is used (``0`` = gate **off**).
+    - If unset: use ``SYGNIF_SWARM_TP_USDT_TARGET`` when > 0 (aligns e.g. **50** USDT TP target with a
+      **50** USDT modeled-edge floor), else ``0`` (off).
+    """
+    raw = os.environ.get("SYGNIF_PREDICT_MIN_EDGE_PROFIT_USDT")
+    if raw is not None and str(raw).strip() != "":
+        try:
+            return max(0.0, float(str(raw).strip()))
+        except (TypeError, ValueError):
+            return 0.0
+    return max(0.0, env_float("SYGNIF_SWARM_TP_USDT_TARGET", 0.0))
+
+
+def modeled_profit_usdt_at_qty(out: dict[str, Any], side: str, qty_btc: float) -> float:
+    """
+    Modeled favorable USDT P/L for ``qty_btc`` at the consensus mid vs close (same units as
+    ``modeled_edge_usdt_per_btc``). Does **not** include fees, funding, or adverse selection.
+    """
+    try:
+        q = float(qty_btc)
+    except (TypeError, ValueError):
+        return 0.0
+    if q <= 0.0:
+        return 0.0
+    return modeled_edge_usdt_per_btc(out, side) * q
+
+
+def relative_modeled_edge_pct(out: dict[str, Any], side: str) -> float:
+    """
+    Favorable price move implied by ``consensus_mid_and_close`` vs ``current_close``, as a
+    percentage of close (long: ``max(0, mid-close)/close*100``; short: symmetric).
+    """
+    mid, cl = consensus_mid_and_close(out)
+    if cl <= 0:
+        return 0.0
+    s = (side or "").strip().lower()
+    if s == "long":
+        return max(0.0, (mid - cl) / cl * 100.0)
+    if s == "short":
+        return max(0.0, (cl - mid) / cl * 100.0)
+    return 0.0
 
 
 def move_pct_and_close(out: dict[str, Any]) -> tuple[float, float]:
@@ -117,6 +311,13 @@ def decide_side(out: dict[str, Any], training: dict[str, Any] | None) -> tuple[s
         v -= 1
 
     bear = r01_bearish_from_training(training if isinstance(training, dict) else {})
+    if (os.environ.get("SYGNIF_PREDICT_BYPASS_R01_LONG_BLOCK") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        bear = False
 
     if v > 0:
         if bear:
@@ -132,6 +333,31 @@ def decide_side(out: dict[str, Any], training: dict[str, Any] | None) -> tuple[s
         return "long", f"tiebreak logreg UP {conf:.1f}%"
     if label == "DOWN" and conf >= brk:
         return "short", f"tiebreak logreg DOWN {conf:.1f}%"
+
+    sf = preds.get("swing_failure") if isinstance(preds.get("swing_failure"), dict) else {}
+    if (os.environ.get("SYGNIF_PREDICT_SWING_FAILURE_ENTRIES") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        if sf.get("sf_long") and not bear:
+            return "long", "swing_failure_sf_long"
+        if sf.get("sf_short"):
+            return "short", "swing_failure_sf_short"
+
+    fs91 = preds.get("failure_swing_heavy91") if isinstance(preds.get("failure_swing_heavy91"), dict) else {}
+    if (os.environ.get("SYGNIF_PREDICT_FAILURE_SWING_HEAVY91_ENTRIES") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    ):
+        if fs91.get("ok") and fs91.get("entry_long") and not bear:
+            return "long", "failure_swing_heavy91_long"
+        if fs91.get("ok") and fs91.get("entry_short"):
+            return "short", "failure_swing_heavy91_short"
+
     return None, f"no edge (vote=0 logreg={label}/{conf:.1f}%)"
 
 
@@ -191,7 +417,29 @@ def run_live_fit(
         rf_trees=rf_trees,
         xgb_estimators=xgb_estimators,
         write_json_path=write_json_path,
+        linear_symbol=symbol,
     )
+    try:
+        from live_trading_calibration import apply_direction_logistic_calibration  # noqa: PLC0415
+
+        apply_direction_logistic_calibration(out, repo_root=Path(__file__).resolve().parents[1])
+    except Exception:
+        pass
+    try:
+        from btc_failure_swing_heavy91 import failure_swing_heavy91_snapshot  # noqa: PLC0415
+
+        _fs91 = failure_swing_heavy91_snapshot(df)
+        _preds = out.setdefault("predictions", {})
+        if isinstance(_preds, dict):
+            _preds["failure_swing_heavy91"] = _fs91
+    except Exception:
+        pass
+    try:
+        from btc_forecast_eval import append_forecast_pending  # noqa: PLC0415
+
+        append_forecast_pending(out, symbol=symbol)
+    except Exception:
+        pass
     pred_ms = (time.perf_counter() - t0) * 1000.0
     return allow_buy, enhanced, out, pred_ms
 
@@ -199,9 +447,13 @@ def run_live_fit(
 def parse_linear_position(
     resp: dict[str, Any],
     symbol: str,
+    position_idx: int | None = None,
 ) -> tuple[str | None, float, str]:
     """
     Return (side: long|short|None, abs size, raw size string for close orders).
+
+    ``position_idx`` **1** / **2** = hedge long / short leg (filters ``positionIdx`` on the row).
+    ``None`` / **0** = largest non-zero size for the symbol (legacy one-way / mixed).
     """
     sym = symbol.upper().strip()
     if resp.get("retCode") != 0:
@@ -212,6 +464,12 @@ def parse_linear_position(
     for row in (resp.get("result") or {}).get("list") or []:
         if str(row.get("symbol", "")).upper() != sym:
             continue
+        if position_idx is not None and int(position_idx) in (1, 2):
+            try:
+                if int(row.get("positionIdx") or 0) != int(position_idx):
+                    continue
+            except (TypeError, ValueError):
+                continue
         raw_sz = str(row.get("size") or "").strip()
         try:
             sz = float(raw_sz)
@@ -233,9 +491,66 @@ def parse_linear_position(
     return best_side, best_sz, best_raw
 
 
+def linear_leg_unrealised_usdt(
+    resp: dict[str, Any],
+    symbol: str,
+    position_idx: int | None = None,
+) -> float | None:
+    """Best matching leg's ``unrealisedPnl`` (USDT) or ``None`` if flat / missing."""
+    sym = symbol.upper().strip()
+    if resp.get("retCode") != 0:
+        return None
+    best_row: dict[str, Any] | None = None
+    best_sz = 0.0
+    for row in (resp.get("result") or {}).get("list") or []:
+        if str(row.get("symbol", "")).upper() != sym:
+            continue
+        if position_idx is not None and int(position_idx) in (1, 2):
+            try:
+                if int(row.get("positionIdx") or 0) != int(position_idx):
+                    continue
+            except (TypeError, ValueError):
+                continue
+        raw_sz = str(row.get("size") or "").strip()
+        try:
+            sz = float(raw_sz)
+        except (TypeError, ValueError):
+            continue
+        if abs(sz) < 1e-12:
+            continue
+        side_api = str(row.get("side") or "").strip().lower()
+        if side_api not in ("buy", "sell"):
+            continue
+        if abs(sz) > best_sz:
+            best_sz = abs(sz)
+            best_row = row
+    if best_row is None:
+        return None
+    try:
+        return float(best_row.get("unrealisedPnl") or 0.0)
+    except (TypeError, ValueError):
+        return None
+
+
 def logreg_confidence(out: dict[str, Any]) -> float:
     dlr = (out.get("predictions") or {}).get("direction_logistic") or {}
     try:
         return float(dlr.get("confidence") or 0.0)
     except (TypeError, ValueError):
         return 0.0
+
+
+def logreg_label(out: dict[str, Any]) -> str:
+    """``UP`` / ``DOWN`` from ``predictions.direction_logistic`` (empty if missing)."""
+    dlr = (out.get("predictions") or {}).get("direction_logistic") or {}
+    return str(dlr.get("label") or "").strip().upper()
+
+
+def logreg_aligns_target(out: dict[str, Any], target: str | None) -> bool:
+    """True when LogReg direction matches a long/short **target** (``UP``→long, ``DOWN``→short)."""
+    if target not in ("long", "short"):
+        return False
+    lab = logreg_label(out)
+    if target == "long":
+        return lab == "UP"
+    return lab == "DOWN"

@@ -16,14 +16,16 @@ Flow
 1. ``run_live_fit`` → ``btc_prediction_output.json`` (same stack as ``btc_predict_protocol_loop``).
 2. ``compute_swarm()`` → ``swarm_knowledge_output.json`` (ML/ch/sc/ta + optional **bf**).
 3. ``write_fused_sidecar`` → ``swarm_nautilus_protocol_sidecar.json`` (Nautilus + ML + **btc_future** vote).
-4. **Gates:** ``finance_agent/swarm_order_gate.py`` — Swarm mean / conflict / ``btc_future.ok``; optional fusion label;
-   default **Hivemind** **hm** vote alignment (``SWARM_ORDER_REQUIRE_HIVEMIND_VOTE=1``).
+4. **Gates:** ``finance_agent/swarm_order_gate.py`` — Swarm mean / conflict / ``btc_future.ok``; fusion label;
+   **Nautilus research** non-contradiction (``SWARM_ORDER_REQUIRE_NAUTILUS_NOT_CONTRARY``); optional **Hivemind** **hm**
+   vote alignment (``SWARM_ORDER_REQUIRE_HIVEMIND_VOTE=1``). Further sidecar / ML confidence knobs are documented in
+   ``swarm_order_gate.py``.
 5. If ``--execute`` + ``SYGNIF_SWARM_PREDICT_ORDER_ACK=YES`` (or ``SYGNIF_PREDICT_PROTOCOL_LOOP_ACK=YES``):
    one ``btc_predict_protocol_loop._iteration`` (opens **Swarm-gated** position on **Bybit demo**).
 
 **Eligible timeframe:** **5m** klines via ``run_live_fit``; historical scan: ``scripts/predict_protocol_eligible_scan.py``.
 
-**Defaults:** ``--manual-notional-usdt 2000`` ``--manual-leverage 50``.
+**Defaults:** ``--manual-notional-usdt 100000`` ``--manual-leverage 50``.
 
 **Continuous auto trading (loop):** ``scripts/swarm_auto_predict_protocol_loop.py`` sets ``SYGNIF_SWARM_GATE_LOOP=1``,
 ``SYGNIF_SWARM_BTC_FUTURE=1`` (demo **bf**) or ``SYGNIF_SWARM_BTC_FUTURE=trade`` (mainnet **bf**), fusion alignment, and optional ``SYGNIF_SWARM_TP_USDT_TARGET=50`` — then runs
@@ -149,7 +151,7 @@ def main() -> int:
     ap.add_argument("--data-dir", type=Path, default=_DATA)
     ap.add_argument("--training-json", type=Path, default=_PA / "training_channel_output.json")
     ap.add_argument("--write-json", default=str(_PA / "btc_prediction_output.json"), metavar="PATH")
-    ap.add_argument("--manual-notional-usdt", type=float, default=2000.0, metavar="USDT")
+    ap.add_argument("--manual-notional-usdt", type=float, default=100_000.0, metavar="USDT")
     ap.add_argument("--manual-leverage", type=float, default=50.0, help="Clamped to BYBIT_DEMO_MANUAL_LEVERAGE_MAX")
     ap.add_argument("--position-idx", type=int, default=int(os.environ.get("BYBIT_DEMO_POSITION_IDX", "0") or 0))
     ap.add_argument("--no-fusion-sync", action="store_true", help="Skip write_fused_sidecar after predict")
@@ -166,6 +168,11 @@ def main() -> int:
         help="Optional extra .env loaded last (overrides); use for demo keys if not in repo .env",
     )
     ap.add_argument("--execute", action="store_true")
+    ap.add_argument(
+        "--hivemind-off",
+        action="store_true",
+        help="Disable SWARM_ORDER_REQUIRE_HIVEMIND_VOTE (gate entries on Swarm mean + fusion + btc_future only)",
+    )
     ap.add_argument(
         "--auto-trading",
         action="store_true",
@@ -193,7 +200,7 @@ def main() -> int:
         print(
             "SYGNIF_SWARM_AUTO_TRADING=1 — for continuous venue loop with Swarm+bf gates use:\n"
             "  SYGNIF_PREDICT_PROTOCOL_LOOP_ACK=YES python3 scripts/swarm_auto_predict_protocol_loop.py "
-            "--execute --manual-notional-usdt 2000 --manual-leverage 50",
+            "--execute --manual-notional-usdt 100000 --manual-leverage 50",
             flush=True,
         )
 
@@ -203,8 +210,14 @@ def main() -> int:
     os.environ.setdefault("SWARM_ORDER_FUSION_ALIGN_BTC_FUTURE", "1")
     os.environ.setdefault("SWARM_ORDER_BTC_FUTURE_FLAT_PASS", "1")
     os.environ.setdefault("SWARM_ORDER_BTC_FUTURE_VOTE_FLAT_PASS", "1")
+    os.environ.setdefault("SWARM_ORDER_MIN_MEAN_LONG", "-0.25")
+    os.environ.setdefault("SWARM_ORDER_MAX_MEAN_SHORT", "0.25")
     os.environ.setdefault("SWARM_ORDER_REQUIRE_HIVEMIND_VOTE", "1")
     os.environ.setdefault("SWARM_ORDER_HIVEMIND_VOTE_FLAT_PASS", "1")
+    # Nautilus research sidecar: veto entries against explicit sidecar bias (fusion ``vote_nautilus``).
+    os.environ.setdefault("SWARM_ORDER_REQUIRE_NAUTILUS_NOT_CONTRARY", "1")
+    if getattr(args, "hivemind_off", False):
+        os.environ["SWARM_ORDER_REQUIRE_HIVEMIND_VOTE"] = "0"
     if getattr(args, "no_fusion_align", False):
         os.environ["SWARM_ORDER_REQUIRE_FUSION_ALIGN"] = "0"
 
@@ -239,6 +252,23 @@ def main() -> int:
     swarm = compute_swarm()
     sp = _write_swarm_json(swarm)
     print(f"SYGNIF_SWARM_GATE wrote {sp}", flush=True)
+    _bf = swarm.get("btc_future") if isinstance(swarm.get("btc_future"), dict) else {}
+    _src = swarm.get("sources") if isinstance(swarm.get("sources"), dict) else {}
+    _bfs = _src.get("bf") if isinstance(_src.get("bf"), dict) else {}
+    print(
+        "SYGNIF_SWARM_BF "
+        + json.dumps(
+            {
+                "bf_vote": _bfs.get("vote"),
+                "bf_detail": _bfs.get("detail"),
+                "btc_future_enabled": _bf.get("enabled"),
+                "btc_future_ok": _bf.get("ok"),
+                "btc_future_profile": _bf.get("profile"),
+            },
+            default=str,
+        ),
+        flush=True,
+    )
 
     fusion_doc = None
     if not args.no_fusion_sync:
@@ -248,14 +278,14 @@ def main() -> int:
             sys.path.insert(0, str(_PA))
             from nautilus_protocol_fusion import write_fused_sidecar  # noqa: PLC0415
 
-        fusion_doc = write_fused_sidecar(_REPO)
+        fusion_doc = write_fused_sidecar(_REPO, btc_prediction_override=out)
         print(
             "SYGNIF_SWARM_GATE fusion "
             + json.dumps((fusion_doc.get("fusion") or {}), default=str),
             flush=True,
         )
 
-    ok, reason = swarm_fusion_allows(target=target, swarm=swarm, fusion_doc=fusion_doc)
+    ok, reason = swarm_fusion_allows(target=target, swarm=swarm, fusion_doc=fusion_doc, predict_out=out)
     print(f"SYGNIF_SWARM_GATE decision ok={ok} reason={reason}", flush=True)
     if not ok:
         return 3

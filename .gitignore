@@ -11,6 +11,11 @@ __pycache__/
 BTC_Prediction/swarm_operator.env
 BTC_Prediction/neurolinked.service.env
 BTC_Prediction/prediction_agent/neurolinked_swarm_channel.json
+BTC_Prediction/prediction_agent/swarm_predict_protocol_dataset.jsonl
+BTC_Prediction/prediction_agent/swarm_sl_liquidation_memory.jsonl
+BTC_Prediction/prediction_agent/btc_eval_forecasts_pending.jsonl
+BTC_Prediction/finance_agent/**/*.pdf
+BTC_Prediction/finance_agent/AI Upload/
 *.sqlite
 *.sqlite-journal
 .DS_Store

@@ -18,6 +18,7 @@ SOURCE_FLOW_NODE: dict[str, str] = {
     "mn": "n-fuse",
     "ac": "n-fuse",
     "bf": "n-fuse",
+    "es": "n-fuse",
 }
 
 

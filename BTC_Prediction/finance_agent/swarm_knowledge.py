@@ -2,11 +2,21 @@
 """
 Swarm knowledge: fuse BTC file sidecars + optional Bybit **mainnet** and **demo (btc_future)** reads into one score + JSON.
 
-**This module never posts orders.** Venue execution lives in ``trade_overseer/bybit_linear_hedge.py`` and
-ACK-gated scripts. **Auto-trading with Swarm** is enabled by running ``scripts/btc_predict_protocol_loop.py``
-with ``SYGNIF_SWARM_GATE_LOOP=1`` (see ``scripts/swarm_auto_predict_protocol_loop.py``): each iteration
-calls ``compute_swarm()`` + fusion, then ``swarm_fusion_allows`` gates **entries**; ``swarm_knowledge`` itself
-still never calls ``POST /v5/order/*``.
+**Swarm vs Bybit — “root” = API-key scope (not UNIX root / host superuser):** With ``BYBIT_DEMO_*`` / ``BYBIT_API_*`` and the Swarm
+Bybit env toggles set, the **finance_agent Swarm stack** uses whatever permissions those keys grant on that venue
+(linear account data, and admin-tier wallet reads when enabled). **`compute_swarm()`` in this file** exercises the
+**read side** only: signed ``GET`` requests (``position/list``, ``wallet-balance`` in admin mode, ``closed-pnl``, public
+tickers). It does **not** call ``POST /v5/order/*`` (no order placement from here). **Venue mutations** on the same
+keys are **not** inlined into ``compute_swarm()``; they run from companion code on ACK-gated paths:
+``trade_overseer/bybit_linear_hedge.py`` (market / reduce-only orders) and ``finance_agent/swarm_btc_future_tpsl_apply.py``
+(``POST /v5/position/trading-stop`` after opens). **Auto-trading** wires those together via
+``scripts/btc_predict_protocol_loop.py`` + ``SYGNIF_SWARM_GATE_LOOP=1`` (see ``scripts/swarm_auto_predict_protocol_loop.py``):
+each iteration calls ``compute_swarm()`` + fusion, then ``swarm_fusion_allows`` gates **entries**, then the loop may POST
+via hedge / TP-SL helpers — not via this module’s fusion function.
+
+**Optional direct orders from this module:** ``post_linear_market_order()`` (same hedge ``POST /v5/order/create``) is
+available for scripts/CLI when ``SYGNIF_SWARM_KNOWLEDGE_ORDER_ACK=YES`` — **separate** from predict-loop ACK; still
+**never** invoked from ``compute_swarm()``.
 
 Sources (votes in {-1, 0, +1} unless noted):
   - File: ML, channel, sidecar, TA (same as before).
@@ -16,7 +26,7 @@ Sources (votes in {-1, 0, +1} unless noted):
   - ``bf`` (**btc_future**) — signed linear ``position/list`` when ``SYGNIF_SWARM_BTC_FUTURE`` is on:
     **demo** mode (``1`` / ``true`` / ``demo`` / …) uses **Bybit API demo** (``BYBIT_DEMO_*`` on demo host).
     **trade** mode (``SYGNIF_SWARM_BTC_FUTURE=trade``) uses **mainnet** (``BYBIT_API_KEY`` / ``BYBIT_API_SECRET``,
-    same read path as ``ac``). Same vote mapping as ``ac``. Read-only. JSON includes ``btc_future.position`` from
+    same read path as ``ac``). Same vote mapping as ``ac``. **Read path only** (position snapshot). JSON includes ``btc_future.position`` from
     ``linear_position_snapshot_from_response``. ``btc_future.profile`` is ``btc_future`` (demo) or ``trade`` (mainnet).
 
 **Admin tier** (expanded **read** scope, still **no writes**):
@@ -47,19 +57,26 @@ linear position; ``trade`` for **mainnet** linear position (same keys as ``ac``)
 ``btc_future`` when ``SYGNIF_SWARM_BTC_FUTURE`` is **demo** or **trade**, plus top-level ``hivemind_explore`` when the Truthcoin integration is
 active. **Processing core:** ``SYGNIF_SWARM_CORE_ENGINE=hivemind`` drives ``swarm_mean`` / ``swarm_label`` from the
 Hivemind liveness vote when the node is reachable; otherwise Python mean over file + venue sources. **``hm`` vote:**
-``SYGNIF_SWARM_HIVEMIND_VOTE=1`` or ``hivemind`` core appends ``sources.hm``. **Host visibility (not UNIX root):**
+``SYGNIF_SWARM_HIVEMIND_VOTE=1`` or ``hivemind`` core appends ``sources.hm``. **Host visibility (not UNIX root — does not grant Bybit admin):**
 ``SYGNIF_SWARM_FULL_ROOT_ACCESS=1`` adds ``swarm_processing_roots`` (``/`` and ``$HOME`` top-level names, capped).
 Configure ``SYGNIF_TRUTHCOIN_DC_ROOT``, ``SYGNIF_TRUTHCOIN_DC_CLI``, ``SYGNIF_TRUTHCOIN_DC_RPC_PORT`` (default ``6013``),
 ``SYGNIF_TRUTHCOIN_DC_TIMEOUT_SEC``, ``SYGNIF_TRUTHCOIN_DC_CACHE_SEC``.
 
-**Open trades report:** ``SYGNIF_SWARM_OPEN_TRADES=1`` (default **on**) adds ``open_trades`` — tries
-``GET {OVERSEER_URL}/trades`` (trade-overseer), else SQLite (read-only).
+**Ethereum Swarm Bee** (storage node HTTP API, **not** Hivemind): set ``SYGNIF_BEE_API_URL`` (e.g.
+``http://127.0.0.1:1633``) or ``BEE_API_ADDR`` (e.g. ``:1633`` → same URL) to probe ``GET /health`` each
+``compute_swarm`` tick. JSON includes top-level ``ethereum_swarm_bee``; when **btc_future** (**bf**) is enabled,
+the same snapshot is copied under ``btc_future.ethereum_swarm_bee``. Optional consensus vote **es** (``+1`` if
+Bee reports ``status=ok``, else ``0``): ``SYGNIF_SWARM_BEE_VOTE=1``. Timeout: ``SYGNIF_BEE_API_TIMEOUT_SEC``.
+Peer-weighted vote (``SYGNIF_SWARM_BEE_PEER_WEIGHT=1``): peers≥100 → **es** counts twice in pool (``es``+``es2``);
+peers<25 → vote=0 (isolated node). Topology fetched from ``GET /topology`` each tick (``SYGNIF_BEE_TOPOLOGY=1``).
 
-**Scope (ignore archived multi-pair DBs by default):** ``SYGNIF_SWARM_OPEN_TRADES_SCOPE=btc_docker`` (default) only reads
-``tradesv3-futures-btc01-demo.sqlite`` + ``tradesv3-btc-spot.sqlite`` (BTC Docker / BTC_Strategy_0_1 paths in compose) and
-**only** rows where ``pair`` starts with ``BTC/``. Set to ``all`` to include legacy ``tradesv3.sqlite`` +
-``tradesv3-futures.sqlite`` (archived-main-traders / multi-coin). ``SYGNIF_SWARM_OPEN_TRADES_BTC_ONLY=0`` disables the
-``BTC/`` filter when scope is ``all``.
+**Open positions report:** ``SYGNIF_SWARM_OPEN_TRADES=1`` (default **on**) adds ``open_trades`` — **Bybit only**:
+signed ``GET /v5/position/list`` per symbol (demo ``BYBIT_DEMO_*`` or mainnet ``BYBIT_API_*`` when
+``OVERSEER_BYBIT_HEDGE_MAINNET`` + ``OVERSEER_HEDGE_LIVE_OK``, same routing as ``bybit_linear_hedge``).
+Symbols: ``SYGNIF_SWARM_OPEN_TRADES_BYBIT_SYMBOLS`` (comma-separated), else ``SYGNIF_SWARM_BTC_FUTURE_SYMBOL`` /
+``SYGNIF_SWARM_BYBIT_SYMBOL``, else ``BTCUSDT``. Cache: ``SYGNIF_SWARM_OPEN_TRADES_BYBIT_CACHE_SEC`` or
+``SYGNIF_SWARM_BTC_FUTURE_CACHE_SEC``. Legacy Freqtrade (overseer + SQLite) lives in
+``swarm_open_trades_freqtrade_archive.build_open_trades_report_freqtrade_legacy``.
 
 **Closed PnL history (USDT linear):** ``SYGNIF_SWARM_BYBIT_CLOSED_PNL=1`` adds ``bybit_closed_pnl`` — signed read-only
 ``GET /v5/position/closed-pnl`` via ``trade_overseer/bybit_linear_hedge.closed_pnl_linear`` (same host/keys as hedge:
@@ -88,7 +105,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import sqlite3
 import sys
 import time
 import urllib.error
@@ -530,6 +546,7 @@ def fetch_demo_linear_position_list(
     symbol: str,
     *,
     cache_sec: float,
+    bypass_cache: bool = False,
 ) -> dict[str, Any] | None:
     """
     Signed **Bybit API demo** ``GET /v5/position/list`` (USDT linear) via ``bybit_linear_hedge``.
@@ -537,14 +554,17 @@ def fetch_demo_linear_position_list(
     Uses ``BYBIT_DEMO_API_KEY`` / ``BYBIT_DEMO_API_SECRET`` on ``api-demo.bybit.com`` unless
     ``OVERSEER_BYBIT_HEDGE_MAINNET`` + ``OVERSEER_HEDGE_LIVE_OK`` force mainnet (same as hedge module).
     Read-only; no orders.
+
+    ``bypass_cache=True`` skips the in-process TTL cache (use for per-tick offline sim reads).
     """
     sym = (symbol or "BTCUSDT").upper().strip() or "BTCUSDT"
     ck = f"demo_bf:{sym}"
     now = time.time()
     ttl = max(15.0, float(cache_sec))
-    ent = _BYBIT_DEMO_BF_CACHE.get(ck)
-    if ent is not None and now - ent[0] < ttl:
-        return ent[1]
+    if not bypass_cache:
+        ent = _BYBIT_DEMO_BF_CACHE.get(ck)
+        if ent is not None and now - ent[0] < ttl:
+            return ent[1]
 
     td = _repo_root() / "trade_overseer"
     tds = str(td)
@@ -553,126 +573,92 @@ def fetch_demo_linear_position_list(
     try:
         import bybit_linear_hedge as blh  # noqa: PLC0415
     except ImportError:
-        _BYBIT_DEMO_BF_CACHE[ck] = (now, None)
+        if not bypass_cache:
+            _BYBIT_DEMO_BF_CACHE[ck] = (now, None)
         return None
 
     try:
         resp = blh.position_list(sym)
     except RuntimeError:
-        _BYBIT_DEMO_BF_CACHE[ck] = (now, None)
+        if not bypass_cache:
+            _BYBIT_DEMO_BF_CACHE[ck] = (now, None)
         return None
     except OSError:
-        _BYBIT_DEMO_BF_CACHE[ck] = (now, None)
+        if not bypass_cache:
+            _BYBIT_DEMO_BF_CACHE[ck] = (now, None)
         return None
 
-    _BYBIT_DEMO_BF_CACHE[ck] = (now, resp)
+    if not bypass_cache:
+        _BYBIT_DEMO_BF_CACHE[ck] = (now, resp)
     return resp if isinstance(resp, dict) else None
 
 
-def _overseer_url() -> str:
-    return (os.environ.get("OVERSEER_URL") or "http://127.0.0.1:8090").rstrip("/")
-
-
-def _fetch_overseer_trades_json() -> dict[str, Any] | None:
-    """GET trade-overseer ``/trades`` (open list + profit aggregates)."""
-    try:
-        url = f"{_overseer_url()}/trades"
-        req = urllib.request.Request(url, headers={"User-Agent": "SYGNIF-swarm-knowledge/1"})
-        with urllib.request.urlopen(req, timeout=6) as resp:
-            raw = resp.read().decode("utf-8", errors="replace")
-        data = json.loads(raw)
-        return data if isinstance(data, dict) else None
-    except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError, TypeError):
-        return None
-
-
-def _open_trades_scope_files() -> list[tuple[str, str]]:
+def hivemind_vote_from_bybit_demo_position(resp: dict[str, Any] | None) -> tuple[int, str]:
     """
-    (filename, label) under ``user_data/`` for SQLite open-trade scan.
+    Map **current** Bybit linear demo ``position/list`` JSON to a Swarm **hm** vote in ``{-1, 0, 1}``.
 
-    Default **btc_docker**: BTC-only Docker DBs (see ``docker-compose.yml`` BTC_Strategy_0_1 + btc-spot).
-    **all**: legacy multi-pair archives (``archived-main-traders`` stack).
+    Uses the first non-flat row (caller's request should be **per-symbol**). Detail strings are
+    machine-oriented (``demo_long`` / ``demo_short`` / ``demo_flat`` / ``demo_error``).
     """
-    raw = (os.environ.get("SYGNIF_SWARM_OPEN_TRADES_SCOPE") or "btc_docker").strip().lower()
-    if raw in ("all", "legacy", "archive"):
-        return (
-            ("tradesv3.sqlite", "spot_archive"),
-            ("tradesv3-futures.sqlite", "futures_archive"),
-        )
-    custom = (os.environ.get("SYGNIF_SWARM_OPEN_TRADES_SQLITE_FILES") or "").strip()
-    if custom:
-        parts = [p.strip() for p in custom.split(",") if p.strip()]
-        return [(p, "custom") for p in parts]
-    return (
-        ("tradesv3-futures-btc01-demo.sqlite", "futures_btc01_demo"),
-        ("tradesv3-btc-spot.sqlite", "btc_spot"),
-    )
+    rows = _linear_open_rows_from_response(resp)
+    if not rows:
+        return 0, "demo_flat"
+    side = str(rows[0].get("side") or "").strip().upper()
+    if side == "BUY":
+        return 1, "demo_long"
+    if side == "SELL":
+        return -1, "demo_short"
+    return 0, "demo_unknown_side"
 
 
-def _open_trades_btc_sql_clause() -> str:
-    """Restrict to BTC linear/spot pair prefix (not WBTC)."""
-    btc_only = os.environ.get("SYGNIF_SWARM_OPEN_TRADES_BTC_ONLY", "1").strip().lower()
-    if btc_only in ("0", "false", "no", "off", "all"):
-        return ""
-    return " AND pair LIKE 'BTC/%'"
-
-
-def _sqlite_open_trades_brief() -> dict[str, Any]:
-    """Read-only summary from selected Freqtrade DBs under ``user_data/``."""
-    ud = _repo_root() / "user_data"
-    out: dict[str, Any] = {"ok": False, "dbs": [], "scope": (os.environ.get("SYGNIF_SWARM_OPEN_TRADES_SCOPE") or "btc_docker")}
-    if not ud.is_dir():
-        return out
-    extra = _open_trades_btc_sql_clause()
-    for fname, label in _open_trades_scope_files():
-        p = ud / fname
-        if not p.is_file():
+def _linear_open_rows_from_response(resp: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """All non-flat linear legs from a ``position/list`` response."""
+    if resp is None or resp.get("retCode") != 0:
+        return []
+    out: list[dict[str, Any]] = []
+    for r in (resp.get("result") or {}).get("list") or []:
+        if not isinstance(r, dict):
             continue
         try:
-            con = sqlite3.connect(str(p))
-            cur = con.execute(f"SELECT COUNT(*) FROM trades WHERE is_open = 1{extra}")
-            n = int(cur.fetchone()[0] or 0)
-            cur = con.execute(
-                f"SELECT pair, COALESCE(enter_tag,''), is_short FROM trades "
-                f"WHERE is_open = 1{extra} ORDER BY id LIMIT 40"
-            )
-            rows = [
-                {"pair": r[0], "enter_tag": r[1] or "", "is_short": bool(r[2])}
-                for r in cur.fetchall()
-            ]
-            con.close()
-            out["dbs"].append({"file": fname, "label": label, "open_n": n, "trades": rows})
-        except (OSError, sqlite3.Error) as e:
-            out["dbs"].append({"file": fname, "error": str(e)[:160]})
-    out["ok"] = bool(out["dbs"])
+            sz = abs(float(r.get("size") or 0.0))
+        except (TypeError, ValueError):
+            continue
+        if sz >= 1e-12:
+            out.append(r)
     return out
 
 
-def build_open_trades_report() -> dict[str, Any]:
-    """
-    Freqtrade open positions for Swarm JSON: overseer when up, else SQLite brief.
+def _bybit_row_to_open_trade(row: dict[str, Any], *, venue: str) -> dict[str, Any]:
+    sym = str(row.get("symbol") or "").upper().strip()
+    side = str(row.get("side") or "").strip()
+    pair = sym
+    if sym.endswith("USDT") and len(sym) > 4:
+        pair = f"{sym[:-4]}/USDT"
+    return {
+        "pair": pair,
+        "symbol": sym,
+        "side": side,
+        "is_short": side.upper() == "SELL",
+        "enter_tag": "bybit_linear",
+        "venue": venue,
+        "avgPrice": row.get("avgPrice"),
+        "markPrice": row.get("markPrice"),
+        "size": row.get("size"),
+        "unrealisedPnl": row.get("unrealisedPnl"),
+        "liqPrice": row.get("liqPrice"),
+        "positionIdx": row.get("positionIdx"),
+    }
 
-    No secrets; safe for ``swarm_knowledge_output.json``.
-    """
-    rep: dict[str, Any] = {"enabled": True}
-    data = _fetch_overseer_trades_json()
-    if data is not None and isinstance(data.get("trades"), list):
-        trades = list(data["trades"])
-        btc_only = os.environ.get("SYGNIF_SWARM_OPEN_TRADES_BTC_ONLY", "1").strip().lower()
-        scope = (os.environ.get("SYGNIF_SWARM_OPEN_TRADES_SCOPE") or "btc_docker").strip().lower()
-        if btc_only not in ("0", "false", "no", "off", "all") and scope not in ("all", "legacy", "archive"):
-            trades = [t for t in trades if str(t.get("pair") or "").upper().startswith("BTC/")]
-        rep["source"] = "overseer"
-        rep["overseer_url"] = _overseer_url()
-        rep["open_n"] = len(trades)
-        rep["trades"] = trades[:60]
-        rep["profits"] = data.get("profits") if isinstance(data.get("profits"), list) else []
-        return rep
-    sq = _sqlite_open_trades_brief()
-    rep["source"] = "sqlite"
-    rep["sqlite"] = sq
-    rep["open_n"] = sum(int(d.get("open_n") or 0) for d in sq.get("dbs") or [])
-    return rep
+
+def _open_trades_bybit_symbols() -> list[str]:
+    raw = (os.environ.get("SYGNIF_SWARM_OPEN_TRADES_BYBIT_SYMBOLS") or "").strip()
+    if raw:
+        return [s.strip().replace("/", "").upper() for s in raw.split(",") if s.strip()]
+    for key in ("SYGNIF_SWARM_BTC_FUTURE_SYMBOL", "SYGNIF_SWARM_BYBIT_SYMBOL"):
+        v = (os.environ.get(key) or "").strip().replace("/", "").upper()
+        if v:
+            return [v]
+    return ["BTCUSDT"]
 
 
 def _num_closed_scalar(val: Any) -> float | None:
@@ -711,6 +697,61 @@ def _has_bybit_signed_creds() -> bool:
     if _bybit_signed_venue_label() == "mainnet":
         return mn
     return demo
+
+
+def build_open_trades_report() -> dict[str, Any]:
+    """
+    Open USDT-linear positions from Bybit ``position/list`` (signed demo or mainnet).
+
+    No secrets in output; safe for ``swarm_knowledge_output.json``.
+    """
+    rep: dict[str, Any] = {"enabled": True, "source": "bybit"}
+    if not _has_bybit_signed_creds():
+        rep["ok"] = False
+        rep["reason"] = "no_bybit_signed_creds"
+        rep["open_n"] = 0
+        rep["trades"] = []
+        rep["bybit_venue"] = _bybit_signed_venue_label()
+        return rep
+
+    label = _bybit_signed_venue_label()
+    rep["bybit_venue"] = label
+    symbols = _open_trades_bybit_symbols()
+    try:
+        cache_sec = float(
+            os.environ.get("SYGNIF_SWARM_OPEN_TRADES_BYBIT_CACHE_SEC")
+            or os.environ.get("SYGNIF_SWARM_BTC_FUTURE_CACHE_SEC")
+            or "60"
+        )
+    except ValueError:
+        cache_sec = 60.0
+    cache_sec = max(15.0, cache_sec)
+
+    all_trades: list[dict[str, Any]] = []
+    symbol_details: list[dict[str, Any]] = []
+
+    for sym in symbols:
+        if label == "mainnet":
+            resp = fetch_mainnet_linear_position_list(sym, cache_sec=cache_sec)
+        else:
+            resp = fetch_demo_linear_position_list(sym, cache_sec=cache_sec)
+        rows = _linear_open_rows_from_response(resp)
+        sym_entry: dict[str, Any] = {
+            "symbol": sym,
+            "retCode": resp.get("retCode") if isinstance(resp, dict) else None,
+            "retMsg": resp.get("retMsg") if isinstance(resp, dict) else None,
+            "open_n": len(rows),
+        }
+        symbol_details.append(sym_entry)
+        for r in rows:
+            all_trades.append(_bybit_row_to_open_trade(r, venue=label))
+
+    rep["ok"] = True
+    rep["open_n"] = len(all_trades)
+    rep["trades"] = all_trades[:60]
+    rep["symbols_queried"] = symbols
+    rep["symbol_details"] = symbol_details
+    return rep
 
 
 def build_bybit_closed_pnl_report() -> dict[str, Any]:
@@ -998,6 +1039,17 @@ def compute_swarm(
         except Exception as exc:
             explore_doc = {"enabled": True, "ok": False, "detail": f"hivemind_prefetch:{exc!r}"}
 
+    ticker_row_for_hivemind: dict[str, Any] | None = None
+
+    bee_doc: dict[str, Any] = {}
+    try:
+        from finance_agent.bee_swarm_bridge import bee_api_base_url, fetch_bee_health
+
+        if bee_api_base_url():
+            bee_doc = fetch_bee_health()
+    except Exception as exc:
+        bee_doc = {"enabled": True, "ok": False, "detail": f"bee_prefetch:{exc!r}"}
+
     bybit_meta: dict[str, Any] = {"enabled": False}
     if _env_truthy("SYGNIF_SWARM_BYBIT_MAINNET"):
         sym = os.environ.get("SYGNIF_SWARM_BYBIT_SYMBOL", "BTCUSDT").strip().upper() or "BTCUSDT"
@@ -1021,6 +1073,7 @@ def compute_swarm(
         v_mn, d_mn = vote_bybit_mainnet_from_row(row, thr_pct=thr)
         votes.append(("mn", v_mn, d_mn))
         bybit_meta["ok"] = row is not None
+        ticker_row_for_hivemind = row
 
     account_meta: dict[str, Any] = {"enabled": False}
     wallet_meta: dict[str, Any] = {"enabled": False}
@@ -1153,6 +1206,8 @@ def compute_swarm(
                     )
         if explore_doc:
             btc_future_meta["hivemind_explore"] = explore_doc
+        if bee_doc.get("enabled"):
+            btc_future_meta["ethereum_swarm_bee"] = bee_doc
 
     if _admin_tier_enabled():
         wb_ttl = _env_float("SYGNIF_SWARM_WALLET_CACHE_SEC", 60.0)
@@ -1178,6 +1233,30 @@ def compute_swarm(
 
     try:
         from finance_agent.truthcoin_hivemind_swarm_core import (  # noqa: PLC0415
+            _hivemind_bybit_public_ticker_wanted,
+            hivemind_explore_needed,
+            merge_bybit_market_into_hivemind_explore,
+            swarm_core_engine,
+            vote_hivemind_from_explore,
+        )
+
+        if hivemind_explore_needed() and isinstance(explore_doc, dict):
+            tr = ticker_row_for_hivemind
+            if tr is None and _hivemind_bybit_public_ticker_wanted():
+                sym_h = os.environ.get("SYGNIF_SWARM_BYBIT_SYMBOL", "BTCUSDT").strip().upper() or "BTCUSDT"
+                cat_h = os.environ.get("SYGNIF_SWARM_BYBIT_CATEGORY", "linear").strip().lower() or "linear"
+                tr = fetch_bybit_mainnet_ticker_row(
+                    category=cat_h,
+                    symbol=sym_h,
+                    timeout_sec=_env_float("SYGNIF_SWARM_BYBIT_TIMEOUT_SEC", 6.0),
+                    cache_sec=max(5.0, _env_float("SYGNIF_SWARM_BYBIT_CACHE_SEC", 45.0)),
+                )
+            merge_bybit_market_into_hivemind_explore(explore_doc, tr)
+    except Exception:
+        pass
+
+    try:
+        from finance_agent.truthcoin_hivemind_swarm_core import (  # noqa: PLC0415
             hivemind_explore_needed,
             swarm_core_engine,
             vote_hivemind_from_explore,
@@ -1190,6 +1269,32 @@ def compute_swarm(
             votes.append(("hm", v_hm, d_hm))
     except Exception:
         pass
+
+    if _env_truthy("SYGNIF_SWARM_BEE_VOTE") and bee_doc.get("enabled"):
+        ok_bee = bool(bee_doc.get("ok"))
+        peers = int(bee_doc.get("peers_connected") or 0)
+        ver = bee_doc.get("version") or ""
+        peer_weight = _env_truthy("SYGNIF_SWARM_BEE_PEER_WEIGHT")
+        is_full = bool(bee_doc.get("full_node"))
+        is_light = bool(bee_doc.get("light_node"))
+        bee_mode = str(bee_doc.get("bee_mode") or "unknown")
+        if ok_bee:
+            if is_light:
+                # Light node: observes network but doesn't serve chunks or route.
+                # 139 known peers ≠ 139 active consensus partners — no vote weight.
+                v_es = 0
+            elif peer_weight and peers < 25:
+                v_es = 0  # isolated full node
+            else:
+                v_es = 1
+        else:
+            v_es = 0
+        mode_tag = f"[{bee_mode}]" if bee_mode not in ("unknown", "full") else ""
+        d_es = f"{mode_tag}p{peers}/{bee_doc.get('peers_population', 0)}d{bee_doc.get('peers_depth', 0)}" if peers else (ver or str(bee_doc.get("detail") or ("ok" if v_es else "bee_down")))
+        votes.append(("es", v_es, d_es))
+        # Double vote only for full nodes with strong connectivity (≥100 peers)
+        if peer_weight and is_full and ok_bee and peers >= 100:
+            votes.append(("es2", v_es, f"bee_full_strong_peers={peers}"))
 
     n = len(votes)
     vote_ints = [v for _, v, _ in votes]
@@ -1300,6 +1405,8 @@ def compute_swarm(
             out["hivemind_explore"] = explore_doc
     except Exception:
         pass
+    if bee_doc.get("enabled"):
+        out["ethereum_swarm_bee"] = bee_doc
     if bybit_meta.get("enabled"):
         out["bybit_mainnet"] = bybit_meta
     if account_meta.get("enabled"):
@@ -1330,6 +1437,50 @@ def compute_swarm(
     return out
 
 
+def swarm_knowledge_order_ack_ok() -> bool:
+    """Human ACK for ``post_linear_market_order`` / ``--market-order`` (not ``SYGNIF_PREDICT_PROTOCOL_LOOP_ACK``)."""
+    return os.environ.get("SYGNIF_SWARM_KNOWLEDGE_ORDER_ACK", "").strip().upper() == "YES"
+
+
+def post_linear_market_order(
+    *,
+    symbol: str,
+    side: str,
+    qty: str,
+    position_idx: int = 0,
+    reduce_only: bool = False,
+    order_link_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    POST ``/v5/order/create`` (market) via ``trade_overseer/bybit_linear_hedge.create_market_order``.
+
+    **Never called from ``compute_swarm()``** — use for explicit operator/tool flows only.
+
+    Requires ``SYGNIF_SWARM_KNOWLEDGE_ORDER_ACK=YES`` (demo/mainnet routing matches ``bybit_linear_hedge`` / env).
+    """
+    if not swarm_knowledge_order_ack_ok():
+        return {
+            "retCode": -1,
+            "retMsg": (
+                "refused: set SYGNIF_SWARM_KNOWLEDGE_ORDER_ACK=YES to allow swarm_knowledge-initiated market orders"
+            ),
+        }
+    root = _repo_root()
+    td = root / "trade_overseer"
+    if str(td) not in sys.path:
+        sys.path.insert(0, str(td))
+    import bybit_linear_hedge as blh  # noqa: PLC0415
+
+    return blh.create_market_order(
+        symbol,
+        side,
+        qty,
+        position_idx,
+        reduce_only,
+        order_link_id=order_link_id,
+    )
+
+
 def briefing_line_swarm(*, max_chars: int = 120) -> str:
     if os.environ.get("SYGNIF_BRIEFING_INCLUDE_SWARM", "").lower() not in (
         "1",
@@ -1356,6 +1507,8 @@ def briefing_line_swarm(*, max_chars: int = 120) -> str:
         line += f"|bf={parts['bf'].get('detail', '?')}"
     if "hm" in parts:
         line += f"|hm={parts['hm'].get('detail', '?')}"
+    if "es" in parts:
+        line += f"|es={parts['es'].get('detail', '?')}"
     bw = sk.get("bybit_wallet") if isinstance(sk.get("bybit_wallet"), dict) else {}
     if bw.get("enabled") and bw.get("usdt_available_briefing"):
         line += f"|wb={bw.get('usdt_available_briefing')}"
@@ -1387,6 +1540,28 @@ def briefing_line_swarm(*, max_chars: int = 120) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Compute swarm_knowledge JSON from Sygnif BTC sidecars.")
     ap.add_argument(
+        "--market-order",
+        choices=["Buy", "Sell"],
+        default=None,
+        help="POST USDT-linear market order via bybit_linear_hedge (needs SYGNIF_SWARM_KNOWLEDGE_ORDER_ACK=YES)",
+    )
+    ap.add_argument("--market-symbol", default="BTCUSDT", help="With --market-order")
+    ap.add_argument("--market-qty", default="", help="e.g. 0.001 (required with --market-order)")
+    ap.add_argument(
+        "--position-idx",
+        type=int,
+        default=0,
+        metavar="N",
+        help="0 one-way, 1 long leg, 2 short leg (hedge)",
+    )
+    ap.add_argument("--reduce-only", action="store_true", help="With --market-order")
+    ap.add_argument("--order-link-id", default="", help="optional Bybit orderLinkId")
+    ap.add_argument(
+        "--also-write-output",
+        action="store_true",
+        help="With --market-order: still write swarm JSON after the POST result",
+    )
+    ap.add_argument(
         "--out",
         type=Path,
         default=None,
@@ -1400,6 +1575,27 @@ def main() -> int:
     )
     ap.add_argument("--print-json", action="store_true", help="Print JSON to stdout")
     args = ap.parse_args()
+
+    if args.market_order:
+        q = (args.market_qty or "").strip()
+        if not q:
+            print("error: --market-qty is required with --market-order", file=sys.stderr)
+            return 2
+        oid = (args.order_link_id or "").strip() or None
+        res = post_linear_market_order(
+            symbol=args.market_symbol,
+            side=args.market_order,
+            qty=q,
+            position_idx=int(args.position_idx),
+            reduce_only=bool(args.reduce_only),
+            order_link_id=oid,
+        )
+        print(json.dumps(res, default=str), flush=True)
+        if int(res.get("retCode", -1)) != 0:
+            return 1
+        if not args.also_write_output:
+            return 0
+
     out = compute_swarm()
     if args.print_json:
         print(json.dumps(out, indent=2))

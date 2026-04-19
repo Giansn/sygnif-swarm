@@ -9,8 +9,9 @@ Env:
 
 - ``SYGNIF_SWARM_BTC_FUTURE_AUTO_TPSL=1`` — run apply (default **on** when ``swarm_sync_protocol`` sets it).
 - ``SYGNIF_SWARM_TPSL_SYMBOL`` — default ``BTCUSDT``.
-- ``SYGNIF_SWARM_TPSL_PROFILE`` — ``default`` | ``reward_risk``. **reward_risk** = wider TP fallback, tighter SL,
-  slightly higher trail (favor asymmetric R:R vs legacy defaults). Per-key env vars still override the profile base.
+- ``SYGNIF_SWARM_TPSL_PROFILE`` — ``default`` | ``reward_risk``. **reward_risk** = moderate TP/SL %% + trail sized for
+  faster predict-loop cadence (e.g. 120s entry cooldown); **default** is slightly wider SL for noise. Per-key env
+  vars still override the profile base.
 - ``SYGNIF_SWARM_TPSL_TP_PCT`` — fallback TP distance from avg entry (%%); profile default if unset.
 - ``SYGNIF_SWARM_TPSL_SL_PCT`` — SL distance from avg entry (%%); profile default if unset.
 - ``SYGNIF_SWARM_TPSL_TRAIL_USD`` / ``SYGNIF_SWARM_TPSL_TRAIL_FRAC`` — trailing; profile defaults if unset.
@@ -18,6 +19,16 @@ Env:
   probabilities (channel training **ch** vote, aligned with btc-specialist bundle). Default **on**.
 - ``SYGNIF_SWARM_TPSL_SKIP_ON_SWARM_CONFLICT=1`` — skip if ``swarm_knowledge_output.json`` has
   ``swarm_conflict`` (default **on**).
+
+**Liquidation-anchored SL (venue ``liqPrice``):** ``SYGNIF_SWARM_SL_LIQ_ANCHOR=1`` (default **on**) — never place
+a protective SL **past** the exchange liquidation price: **long** SL is raised to at least
+``liqPrice * (1 + buffer)``; **short** SL is capped to at most ``liqPrice * (1 - buffer)``. Buffer:
+``SYGNIF_SWARM_SL_LIQ_BUFFER_BPS`` (default **8** = 8 bp). If anchoring would violate Bybit mark clamps,
+anchoring is skipped with a note in ``detail.liq_anchor``.
+
+**Swarm memory (audit trail):** ``SYGNIF_SWARM_SL_MEMORY=1`` (default **on**) appends one JSON line per TP/SL
+attempt to ``prediction_agent/swarm_sl_liquidation_memory.jsonl`` (cap ``SYGNIF_SWARM_SL_MEMORY_MAX_LINES``,
+default **2000**).
 
 Writes ``prediction_agent/swarm_btc_future_tpsl_last.json`` with the last run result (no secrets).
 
@@ -31,6 +42,7 @@ import argparse
 import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -99,13 +111,14 @@ def base_tpsl_from_profile() -> tuple[float, float, float, float]:
     """
     Defaults for TP/SL/trail when individual env vars are unset.
 
-    ``reward_risk``: wider TP fallback, tighter SL, slightly more trail — favors payoff vs
-    legacy ``default`` (still subject to Bybit mark clamp for shorts).
+    ``reward_risk``: tighter %% bands + smaller trail anchor vs old 0.75/0.22/200 — fits shorter holds when
+    ``SWARM_BYBIT_ENTRY_COOLDOWN_SEC`` is low (e.g. 120s). ``default``: a bit more SL room vs ``reward_risk``.
     """
     prof = (os.environ.get("SYGNIF_SWARM_TPSL_PROFILE") or "").strip().lower()
     if prof in ("reward_risk", "rr"):
-        return 0.75, 0.22, 200.0, 0.2
-    return 0.5, 0.35, 150.0, 0.25
+        return 0.55, 0.20, 120.0, 0.15
+    # Default profile: slightly wider SL than reward_risk for chop; smaller trail than legacy 160/0.22.
+    return 0.48, 0.24, 100.0, 0.17
 
 
 def channel_adjust_tpsl(
@@ -186,6 +199,101 @@ def _fmt_price(x: float) -> str:
     return f"{x:.6f}"
 
 
+def finalize_linear_stop_loss(
+    *,
+    side: str,
+    sl: float,
+    mark: float,
+    liq_price: float | None,
+    liq_buffer_bps: float = 8.0,
+    liq_anchor_enabled: bool = True,
+) -> tuple[float, dict[str, Any]]:
+    """
+    Enforce **liquidation buffer** and **Bybit mark** rules on a numeric stop price.
+
+    Mark clamp (``sl`` vs ``mark``) can pull a long stop **below** the liq floor computed earlier;
+    this helper alternates liq-floor / mark-ceiling until stable so liquidation is never closer than
+    the venue SL (for longs: ``stop_loss > liq * (1+buffer)`` when ``liq`` is known).
+    """
+    meta: dict[str, Any] = {}
+    su = (side or "").strip().upper()
+    sl_f = float(sl)
+    mk = float(mark) if mark and mark > 0 else 0.0
+    liq_f = float(liq_price) if liq_price is not None and float(liq_price) > 0 else 0.0
+    bps = max(0.0, min(500.0, float(liq_buffer_bps))) / 10000.0
+    eps = 1e-4
+
+    if not liq_anchor_enabled or liq_f <= 0:
+        if mk > 0:
+            if su == "BUY" and sl_f >= mk:
+                sl_f = mk * (1.0 - 3 * eps)
+                meta["mark_clamp"] = "sl_lt_mark"
+            elif su != "BUY" and sl_f <= mk:
+                sl_f = mk * (1.0 + 3 * eps)
+                meta["mark_clamp"] = "sl_gt_mark"
+        return sl_f, meta
+
+    for _ in range(6):
+        changed = False
+        if su == "BUY":
+            floor = liq_f * (1.0 + bps)
+            if sl_f < floor - 1e-12:
+                sl_f = floor
+                meta["liq_floor"] = round(floor, 4)
+                meta["action"] = "raised_sl_above_liq_floor"
+                changed = True
+        else:
+            cap = liq_f * (1.0 - bps)
+            if sl_f > cap + 1e-12:
+                sl_f = cap
+                meta["liq_cap"] = round(cap, 4)
+                meta["action"] = "capped_sl_below_liq_ceiling"
+                changed = True
+        if mk > 0:
+            if su == "BUY" and sl_f >= mk * (1.0 - 1e-12):
+                sl_f = mk * (1.0 - 3 * eps)
+                meta["mark_clamp"] = "sl_lt_mark"
+                changed = True
+            elif su != "BUY" and sl_f <= mk * (1.0 + 1e-12):
+                sl_f = mk * (1.0 + 3 * eps)
+                meta["mark_clamp"] = "sl_gt_mark"
+                changed = True
+        if not changed:
+            break
+
+    if liq_f > 0:
+        if su == "BUY":
+            floor = liq_f * (1.0 + bps)
+            if sl_f < floor - 1e-9:
+                sl_f = floor
+                meta["post_mark_reanchor"] = "forced_above_liq_after_mark_clamp"
+        else:
+            cap = liq_f * (1.0 - bps)
+            if sl_f > cap + 1e-9:
+                sl_f = cap
+                meta["post_mark_reanchor"] = "forced_below_liq_after_mark_clamp"
+
+    return sl_f, meta
+
+
+def finalize_linear_take_profit(*, side: str, tp: float, mark: float) -> tuple[float, dict[str, Any]]:
+    """Long TP must sit above mark; short TP below mark (Bybit full-mode TP)."""
+    meta: dict[str, Any] = {}
+    su = (side or "").strip().upper()
+    mk = float(mark) if mark and mark > 0 else 0.0
+    tp_f = float(tp)
+    if mk <= 0:
+        return tp_f, meta
+    eps = 1e-4
+    if su == "BUY" and tp_f <= mk * (1.0 + 1e-12):
+        tp_f = mk * (1.0 + 3 * eps)
+        meta["tp_mark_clamp"] = "tp_gt_mark"
+    elif su != "BUY" and tp_f >= mk * (1.0 - 1e-12):
+        tp_f = mk * (1.0 - 3 * eps)
+        meta["tp_mark_clamp"] = "tp_lt_mark"
+    return tp_f, meta
+
+
 def _pick_open_position(rows: list[Any]) -> dict[str, Any] | None:
     for r in rows:
         if not isinstance(r, dict):
@@ -238,12 +346,18 @@ def compute_tpsl_strings(
     sl_pct: float,
     trail_usd: float,
     trail_frac: float,
+    liq_price: float | None = None,
+    liq_buffer_bps: float = 8.0,
+    liq_anchor_enabled: bool = True,
 ) -> dict[str, Any]:
     """
     Build Bybit price strings for Full position TP/SL + trailing distance.
 
     Long: TP toward ``mid`` when ``mid > avg``; else minimal TP above entry.
     Short: TP toward ``mid`` when ``mid < avg``; else minimal TP below entry.
+
+    Optional **liquidation anchor** (``liq_price``): long SL is floored at ``liq*(1+buffer)``; short SL is
+    capped at ``liq*(1-buffer)`` when ``liq_anchor_enabled`` and venue ``liqPrice`` is known.
 
     Bybit v5: for **Buy**, TP must be **above** ``mark``; for **Sell**, TP must be **below** ``mark``
     (``base_price`` in API errors). We clamp to satisfy that.
@@ -255,6 +369,8 @@ def compute_tpsl_strings(
     # ~1 bp cushion vs mark (tick-size rounding handled by string formatting)
     eps = 1e-4
 
+    liq_anchor_meta: dict[str, Any] = {}
+
     if su == "BUY":
         if mid > avg:
             tp = mid
@@ -262,7 +378,7 @@ def compute_tpsl_strings(
         else:
             tp = avg * (1.0 + tp_pct_f / 100.0)
             tp_note = "tp=fallback_pct_long"
-        sl = avg * (1.0 - sl_pct_f / 100.0)
+        sl_f = avg * (1.0 - sl_pct_f / 100.0)
         if mk > 0 and tp <= mk:
             tp = mk * (1.0 + eps)
             tp_note += "|clamped_gt_mark"
@@ -273,10 +389,47 @@ def compute_tpsl_strings(
         else:
             tp = avg * (1.0 - tp_pct_f / 100.0)
             tp_note = "tp=fallback_pct_short"
-        sl = avg * (1.0 + sl_pct_f / 100.0)
+        sl_f = avg * (1.0 + sl_pct_f / 100.0)
         if mk > 0 and tp >= mk:
             tp = mk * (1.0 - eps)
             tp_note += "|clamped_lt_mark"
+
+    liq_use: float | None = None
+    if liq_anchor_enabled and liq_price is not None and float(liq_price) > 0:
+        liq_f = float(liq_price)
+        bps = max(0.0, min(500.0, float(liq_buffer_bps))) / 10000.0
+        liq_anchor_meta["liq_price"] = liq_f
+        liq_anchor_meta["buffer_bps"] = round(float(liq_buffer_bps), 4)
+        if su == "BUY":
+            floor = liq_f * (1.0 + bps)
+            if mk > 0 and floor >= mk:
+                liq_anchor_meta["skip"] = "liq_floor_ge_mark"
+            else:
+                liq_use = liq_f
+        else:
+            cap = liq_f * (1.0 - bps)
+            if mk > 0 and cap <= mk:
+                liq_anchor_meta["skip"] = "liq_cap_le_mark"
+            else:
+                liq_use = liq_f
+
+    sl_f, sl_meta = finalize_linear_stop_loss(
+        side=su,
+        sl=sl_f,
+        mark=mk,
+        liq_price=liq_use,
+        liq_buffer_bps=liq_buffer_bps,
+        liq_anchor_enabled=liq_anchor_enabled and liq_use is not None,
+    )
+    liq_anchor_meta.update(sl_meta)
+
+    tp, tp_meta = finalize_linear_take_profit(side=su, tp=tp, mark=mk)
+    if tp_meta:
+        liq_anchor_meta.update(tp_meta)
+        if tp_meta.get("tp_mark_clamp"):
+            tp_note += "|tp_mark_finalize"
+
+    sl = sl_f
 
     dist = abs(mid - avg) if mid > 0 and avg > 0 else 0.0
     trail = max(0.0, float(trail_usd) + trail_frac * dist)
@@ -290,7 +443,53 @@ def compute_tpsl_strings(
         "mid_next_mean": mid,
         "avg_entry": avg,
         "mark_price": mk if mk > 0 else None,
+        "liq_anchor_meta": liq_anchor_meta,
     }
+
+
+def _append_swarm_sl_memory_from_out(out: dict[str, Any]) -> None:
+    """Append one JSONL record when TP/SL detail was computed (best-effort)."""
+    if not _env_truthy("SYGNIF_SWARM_SL_MEMORY", default=True):
+        return
+    det = out.get("detail")
+    if not isinstance(det, dict) or not det.get("stop_loss"):
+        return
+    path = _prediction_dir() / "swarm_sl_liquidation_memory.jsonl"
+    max_lines = max(50, int(_env_float("SYGNIF_SWARM_SL_MEMORY_MAX_LINES", 2000.0)))
+    row: dict[str, Any] = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "ok": bool(out.get("ok")),
+        "skipped": out.get("skipped"),
+        "symbol": det.get("symbol"),
+        "side": det.get("side"),
+        "take_profit": det.get("take_profit"),
+        "stop_loss": det.get("stop_loss"),
+        "liq_price_venue": det.get("liq_price_venue"),
+        "liq_anchor": det.get("liq_anchor") or {},
+        "channel_tpsl": det.get("channel_tpsl"),
+    }
+    br = out.get("bybit")
+    if isinstance(br, dict):
+        row["bybit_retCode"] = br.get("retCode")
+        row["bybit_retMsg"] = br.get("retMsg")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n")
+    except OSError:
+        return
+    try:
+        txt = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    lines = txt.splitlines()
+    if len(lines) <= max_lines:
+        return
+    keep = lines[-max_lines:]
+    try:
+        path.write_text("\n".join(keep) + "\n", encoding="utf-8")
+    except OSError:
+        pass
 
 
 def apply_btc_future_tpsl(*, dry_run: bool = False) -> dict[str, Any]:
@@ -298,6 +497,7 @@ def apply_btc_future_tpsl(*, dry_run: bool = False) -> dict[str, Any]:
     If enabled and demo keys + open position + prediction file: POST trading-stop.
 
     Returns a dict with ``ok``, ``skipped`` (reason or None), ``detail``, ``bybit`` (last response).
+    Always updates ``swarm_btc_future_tpsl_last.json`` under the prediction dir (best-effort).
     """
     out: dict[str, Any] = {
         "ok": False,
@@ -305,6 +505,20 @@ def apply_btc_future_tpsl(*, dry_run: bool = False) -> dict[str, Any]:
         "detail": {},
         "bybit": None,
     }
+    try:
+        return _apply_btc_future_tpsl_impl(out, dry_run=dry_run)
+    finally:
+        try:
+            (_prediction_dir() / "swarm_btc_future_tpsl_last.json").write_text(
+                json.dumps(out, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+        _append_swarm_sl_memory_from_out(out)
+
+
+def _apply_btc_future_tpsl_impl(out: dict[str, Any], *, dry_run: bool) -> dict[str, Any]:
     if not _env_truthy("SYGNIF_SWARM_BTC_FUTURE_AUTO_TPSL", default=False):
         out["skipped"] = "SYGNIF_SWARM_BTC_FUTURE_AUTO_TPSL_off"
         return out
@@ -373,6 +587,12 @@ def apply_btc_future_tpsl(*, dry_run: bool = False) -> dict[str, Any]:
         mark = avg
 
     try:
+        liq_raw = float(pos.get("liqPrice") or 0.0)
+    except (TypeError, ValueError):
+        liq_raw = 0.0
+    liq_price = liq_raw if liq_raw > 0 else None
+
+    try:
         pidx = int(pos.get("positionIdx") or 0)
     except (TypeError, ValueError):
         pidx = 0
@@ -394,6 +614,9 @@ def apply_btc_future_tpsl(*, dry_run: bool = False) -> dict[str, Any]:
         sl_pct=sl_pct,
         trail_usd=trail_usd,
         trail_frac=trail_frac,
+        liq_price=liq_price,
+        liq_buffer_bps=_env_float("SYGNIF_SWARM_SL_LIQ_BUFFER_BPS", 8.0),
+        liq_anchor_enabled=_env_truthy("SYGNIF_SWARM_SL_LIQ_ANCHOR", default=True),
     )
     tp_s = comp["take_profit"]
     sl_s = comp["stop_loss"]
@@ -412,6 +635,8 @@ def apply_btc_future_tpsl(*, dry_run: bool = False) -> dict[str, Any]:
         "mark_price": comp.get("mark_price"),
         "tpsl_profile": (os.environ.get("SYGNIF_SWARM_TPSL_PROFILE") or "default").strip() or "default",
         "channel_tpsl": ch_meta,
+        "liq_price_venue": liq_price,
+        "liq_anchor": comp.get("liq_anchor_meta") or {},
     }
 
     if dry_run:
