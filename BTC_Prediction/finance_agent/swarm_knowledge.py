@@ -161,6 +161,14 @@ def sygnif_swarm_btc_future_mode() -> str:
         return "trade"
     if raw in ("1", "true", "yes", "on", "demo"):
         return "demo"
+    # Fix #3 (2026-04-28): typos used to silently disable the bf vote.
+    # Surface the bad value so caller can store it on btc_future_meta and
+    # the user notices instead of losing a strong signal silently.
+    print(
+        f"[swarm_knowledge] WARN: unknown SYGNIF_SWARM_BTC_FUTURE={raw!r} — "
+        f"treating as off; valid: '', 0, 1, true, false, on, off, demo, trade",
+        file=sys.stderr,
+    )
     return "off"
 
 
@@ -806,8 +814,23 @@ def build_bybit_closed_pnl_report() -> dict[str, Any]:
 
     rows_raw: list[dict[str, Any]] = []
     cursor = ""
+    # Fix #5 (2026-04-28): hard cap on pagination iterations. A malformed
+    # nextPageCursor that never empties (or a Bybit bug returning page_lim=1
+    # while saying "more available") could spin indefinitely. With page_lim
+    # ≤ 100 and max_rows default 200, real runs need ~2-3 pages; cap at 25.
+    page_cap = max(2, (max_rows // page_lim) + 5)
+    pages_seen = 0
     try:
         while len(rows_raw) < max_rows:
+            pages_seen += 1
+            if pages_seen > page_cap:
+                print(
+                    f"[swarm_knowledge] WARN: closed_pnl pagination hit cap "
+                    f"({page_cap} pages, {len(rows_raw)} rows) for {sym}@{venue}; "
+                    f"breaking",
+                    file=sys.stderr,
+                )
+                break
             r = blh.closed_pnl_linear(sym, limit=str(page_lim), cursor=cursor)
             if r.get("retCode") != 0:
                 rep = {
@@ -1326,7 +1349,15 @@ def compute_swarm(
                 conflict = spread >= 2
                 engine = "python"
                 engine_detail = "torch_missing_fallback"
-        except Exception:
+        except Exception as exc:
+            # Fix #2 (2026-04-28): was silent `except: pass`, hiding pytorch
+            # import + invocation failures. Now stderr-loud so a broken
+            # pt-fusion path surfaces in the loop's logs.
+            print(
+                f"[swarm_knowledge] WARN: pytorch fusion path failed "
+                f"({type(exc).__name__}: {exc}); falling back to python mean",
+                file=sys.stderr,
+            )
             mean = sum(vote_ints) / n if n else 0.0
             if mean > 0.25:
                 label = "SWARM_BULL"
@@ -1369,13 +1400,34 @@ def compute_swarm(
                 label = "SWARM_BEAR"
             else:
                 label = "SWARM_MIXED"
-            conflict = False
+            # Fix #4 (2026-04-28): do NOT clobber `conflict` to False here.
+            # Real disagreement among the underlying source votes (ml=+1,
+            # ta=-1, sc=-1) needs to remain visible even when hivemind core
+            # produces the final mean/label. Keep the python/pytorch-derived
+            # `conflict` value computed above.
             engine = "hivemind"
             engine_detail = "truthcoin_dc_hivemind_core"
         elif _core == "hivemind":
             engine_detail = f"{engine_detail}+truthcoin_dc_unreachable"
-    except Exception:
-        pass
+    except Exception as exc:
+        # Fix #2 (2026-04-28): was silent `except: pass`. Hivemind import
+        # failures or invocation errors now surface in stderr so they don't
+        # silently downgrade the engine to python without notice.
+        print(
+            f"[swarm_knowledge] WARN: hivemind core override failed "
+            f"({type(exc).__name__}: {exc}); keeping python/pytorch verdict",
+            file=sys.stderr,
+        )
+
+    # Fix #1 (2026-04-28): n_min floor on fusion verdict.
+    # Without this, a single non-trading source (e.g. Bee health =+1) can
+    # produce mean=1.0 -> SWARM_BULL, gating real-money entries on a single
+    # vote. Require >=N active sources before allowing a directional verdict.
+    n_min = int(max(1, _env_float("SYGNIF_SWARM_FUSION_NMIN", 3)))
+    n_active = sum(1 for v in vote_ints if v != 0)
+    if n_active < n_min and label in ("SWARM_BULL", "SWARM_BEAR"):
+        engine_detail = f"{engine_detail}+nmin_clamp(n_active={n_active}<{n_min})"
+        label = "SWARM_MIXED"
 
     out: dict[str, Any] = {
         "generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1398,13 +1450,24 @@ def compute_swarm(
         pr = build_processing_roots_manifest()
         if pr:
             out["swarm_processing_roots"] = pr
-    except Exception:
-        pass
+    except Exception as exc:
+        # Fix #2 (2026-04-28): was silent. Surface so a broken core_engine_out
+        # or processing_roots build is visible in logs.
+        print(
+            f"[swarm_knowledge] WARN: swarm_core_engine/processing_roots build failed "
+            f"({type(exc).__name__}: {exc})",
+            file=sys.stderr,
+        )
     try:
         if explore_doc and _hivemind_needed():
             out["hivemind_explore"] = explore_doc
-    except Exception:
-        pass
+    except Exception as exc:
+        # Fix #2 (2026-04-28): was silent.
+        print(
+            f"[swarm_knowledge] WARN: hivemind_explore attach failed "
+            f"({type(exc).__name__}: {exc})",
+            file=sys.stderr,
+        )
     if bee_doc.get("enabled"):
         out["ethereum_swarm_bee"] = bee_doc
     if bybit_meta.get("enabled"):
